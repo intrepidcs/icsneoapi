@@ -109,10 +109,11 @@ void FreeNeoVIObject(cicsneoVI *pNeoVI)
 		break;
 	}
 	
-	if(!bFound)
-
-	delete ((cicsneoVI *) p_neoVIObjects[i]);
-	p_neoVIObjects[i] = NULL;
+	if(bFound)
+	{
+		delete ((cicsneoVI *) p_neoVIObjects[i]);
+		p_neoVIObjects[i] = 0;
+	}
 }
 
 
@@ -272,7 +273,7 @@ void icsneoShutdownAPI(void)
 			pOb = (cicsneoVI *) p_neoVIObjects[i];
 			pOb->CloseDevice();
 			delete pOb;
-			p_neoVIObjects[i] = NULL;
+			p_neoVIObjects[i] = 0;
 		}
 	}
 }
