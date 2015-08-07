@@ -146,9 +146,9 @@ int main(int argc, char** argv)
   if(serial_to_open == 0)
     index_to_open = 0;
 	
-	printf("\nOpening device %i\n", index_to_open);
+	printf("\nOpening device %i\n", index_to_open + 1);
 	
-	iRetVal = icsneoOpenNeoDevice(&Nd[0], &hObject, NULL, 1, 0/*DEVICE_OPTION_DONT_ENABLE_NETCOMS*/);
+	iRetVal = icsneoOpenNeoDevice(&Nd[index_to_open], &hObject, NULL, 1, 0/*DEVICE_OPTION_DONT_ENABLE_NETCOMS*/);
 
     if(iRetVal == 1)
     {
@@ -175,14 +175,14 @@ int main(int argc, char** argv)
             case 't':            
                 icsSpyMessage OutMsg;
                 OutMsg.ArbIDOrHeader = 0x500;
-                OutMsg.Data[0] = 0x01;
-                OutMsg.Data[1] = 0x02;
-                OutMsg.Data[2] = 0x03;
-                OutMsg.Data[3] = 0x04;
-                OutMsg.Data[4] = 0x05;
-                OutMsg.Data[5] = 0x06;
-                OutMsg.Data[6] = 0x07;
-                OutMsg.Data[7] = 0x08;
+                OutMsg.Data[0] = Nd[index_to_open].SerialNumber & 0xff;
+                OutMsg.Data[1] = (Nd[index_to_open].SerialNumber >> 8) & 0xff;
+                OutMsg.Data[2] = (Nd[index_to_open].SerialNumber >> 16);
+                OutMsg.Data[3] = (Nd[index_to_open].SerialNumber >> 24);
+                OutMsg.Data[4] = 0xde;
+                OutMsg.Data[5] = 0xad;
+                OutMsg.Data[6] = 0xbe;
+                OutMsg.Data[7] = 0xef;
                 OutMsg.NumberBytesData = 8;
                 OutMsg.NumberBytesHeader = 2;      
                 iRetVal = icsneoTxMessages(hObject, &OutMsg, NETID_HSCAN, 1);

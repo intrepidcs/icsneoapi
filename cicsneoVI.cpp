@@ -228,12 +228,12 @@ bool cicsneoVI::TransmitMessages(icsSpyMessage *msg,unsigned long lNetworkID,uns
 
 #endif
 
-	ftdi_write_data(&m_ftdic, m_TxQueueTempBuf, packet_byte_count);  
+	int written = ftdi_write_data(&m_ftdic, m_TxQueueTempBuf, packet_byte_count); 
   
       if(m_TxQueueTempBuf)
         delete [] m_TxQueueTempBuf;
      
-    return true;
+    return written;
 
 }
 
@@ -262,8 +262,8 @@ bool cicsneoVI::OpenDevice(NeoDevice *pDevice)
 
     sprintf(SerialNumber, "%d", pDevice->SerialNumber);
 	
-	//iRetVal = ftdi_usb_open_desc(&m_ftdic, 0x093C, PID, NULL, SerialNumber);
-	iRetVal = ftdi_usb_open(&m_ftdic, 0x093C, PID);
+	iRetVal = ftdi_usb_open_desc(&m_ftdic, 0x093C, PID, NULL, SerialNumber);
+	//iRetVal = ftdi_usb_open(&m_ftdic, 0x093C, PID);
 	if(iRetVal < 0)
 		return iRetVal;
 	
@@ -640,7 +640,7 @@ bool cicsneoVI::ProcessRxPacket(unsigned long lCurrentTime, unsigned char *bPack
     for(int i=0;i<lNumberOfBytes;i++)
         printf("%0x-",bPacket[i]);
         
-        printf("lNetwork = %0x\n",lNetwork);
+        printf("lNetwork = %0x\n",(unsigned int)lNetwork);
         
 #endif    
 	    

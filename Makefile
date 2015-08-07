@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-g -c -IOsAbstraction
+CFLAGS=-g -c -I. -I./OsAbstraction
 AR=ar
 
 all: lib sample
@@ -8,7 +8,7 @@ lib: CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OsAbstraction/OCriticalSection.o Os
 	$(AR) rcs libicsneo.a CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o
 
 sample: GeneralTestProject/main.o
-	$(CC) main.o -o icsneo_sample -l:libicsneo.a -lpthread -l:/usr/lib/x86_64-linux-gnu/libftdi.so.1
+	$(CC) main.o -o icsneo_sample -l:libicsneo.a -lpthread -lftdi
 
 CFTDILib.o: CFTDILib.cpp
 	$(CC) $(CFLAGS) CFTDILib.cpp
@@ -32,7 +32,7 @@ OsAbstraction/OThread.o: OsAbstraction/OThread.cpp
 	$(CC) $(CFLAGS) OsAbstraction/OThread.cpp
 
 GeneralTestProject/main.o: GeneralTestProject/main.cpp
-	$(CC) -c -I. -I./OsAbstraction GeneralTestProject/main.cpp
+	$(CC) $(CFLAGS) GeneralTestProject/main.cpp
 
 clean:
 	rm -rf *.o libicsneo.a OsAbstraction/*.o
