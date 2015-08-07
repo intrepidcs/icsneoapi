@@ -35,7 +35,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "OCriticalSection.h"
 #include <stdlib.h>
 
-int hObject = -1;
+void* hObject = 0;
 
 OCriticalSection csShutdown;
 
@@ -80,11 +80,11 @@ void *ReadThread(void *lParam)
 	return 0;
 }
 
-int main(void)
+int main(int argc, char** argv)
 {
 	NeoDevice Nd[255];
 	int iRetVal = 0;
-	int i;
+	int i, serial_to_open = 0, index_to_open;
 	int NumDevices = 255;
 	int NumErrors;
 	pthread_t thread;
@@ -93,6 +93,16 @@ int main(void)
 	char DeviceType[25];
 	char chIn;
 	unsigned long DeviceTypes;
+
+  if(argc >= 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+      printf("icsneo sample application\n-s, --serial\t open a specific serial number\n-h, --help\tprint this message\n");
+      return 0;
+  }
+
+
+  if(argc >= 3 && (strcmp(argv[1], "-s") == 0 || strcmp(argv[1], "--serial") == 0))
+    serial_to_open = atoi(argv[2]);
+
 	
 	bShutDown = false;
 	
@@ -102,7 +112,7 @@ int main(void)
 	
 	iRetVal = icsneoFindNeoDevices(DeviceTypes, Nd, &NumDevices);
 		
-	if(!NumDevices)
+	if(iRetVal == 0 || NumDevices == 0)
 	{
 		printf("No devices found...exiting with ret = %d\n",iRetVal);
 		return 0;		
@@ -125,12 +135,18 @@ int main(void)
                 strcpy(DeviceType, "unknown device");                
 			
 		}		
+
+    if(Nd[i].SerialNumber == serial_to_open)
+      index_to_open = i;
+
 		printf("Device %d: ", i + 1);
 		printf("Serial # %d Type = %s\n", Nd[i].SerialNumber, DeviceType); 
 		
 	}
+  if(serial_to_open == 0)
+    index_to_open = 0;
 	
-	printf("\nOpening the first device\n");
+	printf("\nOpening device %i\n", index_to_open);
 	
 	iRetVal = icsneoOpenNeoDevice(&Nd[0], &hObject, NULL, 1, 0/*DEVICE_OPTION_DONT_ENABLE_NETCOMS*/);
 

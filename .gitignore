@@ -1,0 +1,4 @@
+*.a
+*.o
+icsneo_sample
+*.log

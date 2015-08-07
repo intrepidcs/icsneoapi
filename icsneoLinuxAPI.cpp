@@ -90,7 +90,7 @@ cicsneoVI *GetNeoVIObject(void)
 
     pObj = new cicsneoVI;
  	
-	p_neoVIObjects[i] = (unsigned long) pObj;
+	p_neoVIObjects[i] = (void*) pObj;
 	
 	return  pObj;
 }
@@ -102,7 +102,7 @@ void FreeNeoVIObject(cicsneoVI *pNeoVI)
 		
 	for(i = 0; i < 256; i++)
 	{
-		if(p_neoVIObjects[i] == 0 || p_neoVIObjects[i] != (unsigned long) pNeoVI)
+		if(p_neoVIObjects[i] == 0 || p_neoVIObjects[i] != (void*) pNeoVI)
 			 continue;
 		
 		bFound = true;	
@@ -119,7 +119,7 @@ void FreeNeoVIObject(cicsneoVI *pNeoVI)
 
 int icsneoFindNeoDevices(unsigned long DevType, NeoDevice *pDevice, int *num)
 {
-	int ret;
+	int ret = 0;
 	int ctr = 0;
 	int PID;
 	struct ftdi_context ftdic;
@@ -130,7 +130,7 @@ int icsneoFindNeoDevices(unsigned long DevType, NeoDevice *pDevice, int *num)
 	bool bMatch;
 	
 	if(ftdi_init(&ftdic) < 0)
-        return -1;	
+        return ret;	
 		
 	
 	PID = 0x0601;
@@ -182,7 +182,7 @@ int icsneoFindNeoDevices(unsigned long DevType, NeoDevice *pDevice, int *num)
 }
 
 int  icsneoOpenNeoDevice(NeoDevice *pNeoDevice,	
-								 int *hObject, 
+								 void **hObject, 
 								 unsigned char * bNetworkIDs,
 								 int bConfigRead, 
 								 int iOptions)
@@ -199,7 +199,7 @@ int  icsneoOpenNeoDevice(NeoDevice *pNeoDevice,
 	if(!pNeoVIObj)
 		return 0;
 
-	*hObject = (unsigned long) pNeoVIObj;
+	*hObject = (void*) pNeoVIObj;
 
 	if(!pNeoVIObj->OpenDevice(pNeoDevice))
     {

@@ -33,7 +33,7 @@ int icsneoGetTextApi(void* hObject,char * buffer,unsigned int iCharacterCapacity
 void icsneoInitializeAPI(void); 
 void icsneoShutdownAPI(void); 
 int  icsneoFindNeoDevices(unsigned long DeviceTypes, NeoDevice *pNeoDevice, int *pNumDevices);
-int  icsneoOpenNeoDevice(NeoDevice *pNeoDevice,	int *hObject, unsigned char * bNetworkIDs, int bConfigRead, int bSyncToPC);
+int  icsneoOpenNeoDevice(NeoDevice *pNeoDevice,	void **hObject, unsigned char * bNetworkIDs, int bConfigRead, int bSyncToPC);
 int  icsneoEnableNetworkCom(void* hObject, int iEnable);
 int  icsneoClosePort(void* hObject, int * pNumberOfErrors);
 int  icsneoGetMessages(void* hObject, icsSpyMessage * pMsg, int * pNumberOfMessages, int * pNumberOfErrors);
