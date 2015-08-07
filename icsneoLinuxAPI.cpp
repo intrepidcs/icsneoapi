@@ -36,7 +36,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string.h>
 #include "ftdilib.h"
 
-unsigned long p_neoVIObjects[256];
+void* p_neoVIObjects[256];
 bool g_bEnableAutoFirmwareUpdate = false;
 bool g_bEnableLocalSockServer = false;
 
@@ -48,7 +48,7 @@ void icsneoInitializeAPI(void)
 		p_neoVIObjects[i] = 0;			
 }
 
-bool ValidateNeoVIObject(int hObject)
+bool ValidateNeoVIObject(void* hObject)
 {
 	int NeoObjectIndex;
 	bool bFound = false;
@@ -212,7 +212,7 @@ int  icsneoOpenNeoDevice(NeoDevice *pNeoDevice,
 	return 1;
 }
 
-int  icsneoTxMessages(int hObject, icsSpyMessage *pMsg,	int lNetworkID, int lNumMessages)
+int  icsneoTxMessages(void* hObject, icsSpyMessage *pMsg,	int lNetworkID, int lNumMessages)
 {
 	if(!ValidateNeoVIObject(hObject))
 		return false;
@@ -222,7 +222,7 @@ int  icsneoTxMessages(int hObject, icsSpyMessage *pMsg,	int lNetworkID, int lNum
  	return pOb->TransmitMessages(pMsg, lNetworkID, lNumMessages);
 }
 
-int icsneoClosePort(int hObject, int * pNumberOfErrors)
+int icsneoClosePort(void* hObject, int * pNumberOfErrors)
 {
 	bool bActuallyClosed;
 	
@@ -237,7 +237,7 @@ int icsneoClosePort(int hObject, int * pNumberOfErrors)
 	return true;
 }
 
-void  icsneoFreeObject(int hObject)
+void  icsneoFreeObject(void* hObject)
 {
 	if(!ValidateNeoVIObject(hObject))
 		return;
@@ -245,7 +245,7 @@ void  icsneoFreeObject(int hObject)
 	FreeNeoVIObject((cicsneoVI *)hObject);
 }
 
-int  icsneoGetMessages(int hObject, icsSpyMessage * pMsg, int * pNumberOfMessages,
+int  icsneoGetMessages(void* hObject, icsSpyMessage * pMsg, int * pNumberOfMessages,
 							   int * pNumberOfErrors)
 {
 	int iRetVal;
@@ -278,7 +278,7 @@ void icsneoShutdownAPI(void)
 	}
 }
 
-int  icsneoWaitForRxMessagesWithTimeOut(int hObject, unsigned int iTimeOut)
+int  icsneoWaitForRxMessagesWithTimeOut(void* hObject, unsigned int iTimeOut)
 {
 	int iRetVal;
 
