@@ -293,3 +293,16 @@ int  icsneoWaitForRxMessagesWithTimeOut(void* hObject, unsigned int iTimeOut)
 }
 
 
+int  icsneoGetTimeStampForMsg(void* hObject, icsSpyMessage *pMsg, double *pTimeStamp)
+{
+	int iRetVal;
+
+	if(!ValidateNeoVIObject(hObject))
+		return false;
+
+	cicsneoVI *pOb = (cicsneoVI *) hObject;
+
+	iRetVal = pOb->GetTimeStampForMsg(pMsg, pTimeStamp);
+
+	return iRetVal;	
+}

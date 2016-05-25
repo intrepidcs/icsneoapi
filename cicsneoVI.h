@@ -99,7 +99,8 @@ public:
 	void Reset(void);
     bool TransmitMessages(icsSpyMessage *msg,unsigned long lNetworkID,unsigned long lNumMessages);
     int WaitForRxMessagesWithTimeOut(unsigned int iTimeOut);
-    int ReadOutMessages(icsSpyMessage *msg, int &lNumberOfMessages);	
+    int ReadOutMessages(icsSpyMessage *msg, int &lNumberOfMessages);
+    int GetTimeStampForMsg(icsSpyMessage *msg, double *pTimeStamp);	
     bool ProcessRxPacket(unsigned long lCurrentTime, unsigned char *bPacket, unsigned long lNumberOfBytes);
     bool AddMsgToRXQueue(icsSpyMessage &stMsg, bool bSetEvent = true);
     bool ParseInputStream(unsigned long lCurrentTime,unsigned char *bDataOutput,unsigned long lNumberOfBytes);

@@ -57,10 +57,10 @@ void *ReadThread(void *lParam)
    	   bDone = bShutDown;
        csShutdown.Unlock();
        
-       if(bDone)   
-			break;
+      if(bDone)   
+			 break;
      			
-		if(icsneoWaitForRxMessagesWithTimeOut(hObject, 100) == 0)
+		  if(icsneoWaitForRxMessagesWithTimeOut(hObject, 100) == 0)
     		continue;
     		
     	if(icsneoGetMessages(hObject, Msgs, &NumMsgs, &NumErrors) == 0)
@@ -68,14 +68,16 @@ void *ReadThread(void *lParam)
    	
      	for(int i = 0; i < NumMsgs; i++)
      	{
-              printf("Network %d ArbID = %lX - Data Bytes: ", Msgs[i].NetworkID,Msgs[i].ArbIDOrHeader);
-              for(int j = 0; j < Msgs[i].NumberBytesData; j++)
-                    printf("%02X ", Msgs[i].Data[j]);
-     		  printf("\n");           
+        double time;
+        icsneoGetTimeStampForMsg(hObject, &Msgs[i], &time);
+        printf("Time %f Network %d ArbID = %lX - Data Bytes: ", time, Msgs[i].NetworkID, Msgs[i].ArbIDOrHeader);
+        for(int j = 0; j < Msgs[i].NumberBytesData; j++)
+          printf("%02X ", Msgs[i].Data[j]);
+        printf("\n");           
      	}  	
 	}	
     	
-  	printf("ReadThread done\n");
+  printf("ReadThread done\n");
  
 	return 0;
 }

@@ -30,8 +30,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "OSAbstraction.h"
 #include <time.h>
 
-FILE* logfile;
-
 cicsneoVI::cicsneoVI() 
 {
     m_bDeviceOpen = false;
@@ -51,9 +49,6 @@ cicsneoVI::cicsneoVI()
 	{	
 		m_bNetworkIDs[iCount] = iCount;
     }
-    
-    logfile = fopen("icsneo.log","w");
-    fputs("TimeStamp    Network     ArbID   Data\n",logfile);
 
 }
 cicsneoVI::~cicsneoVI()
@@ -63,8 +58,6 @@ cicsneoVI::~cicsneoVI()
     m_bneoShutdown = true;
     delete m_pcsReceivedData;
     delete [] m_pMsgBuffer;
-    
-    fclose(logfile);
 }
 
 int cicsneoVI::ReadOutMessages(icsSpyMessage *msg, int &lNumberOfMessages)
@@ -108,12 +101,6 @@ bool cicsneoVI::AddMsgToRXQueue(icsSpyMessage &stMsg, bool bSetEvent)
     }
 		 
         m_pMsgBuffer[m_InComingMsgCount] = stMsg;
-        
-        double time = NEOVI_RED_TIMESTAMP_2_25NS * (double)stMsg.TimeHardware2 + NEOVI_RED_TIMESTAMP_1_25NS * (double)stMsg.TimeHardware;
-        
-#ifdef DEBUG      
-        fprintf(logfile,"%lf     %0x     %0x     %0x %0x %0x %0x %0x %0x %0x %0x\n",time,stMsg.NetworkID,stMsg.ArbIDOrHeader,stMsg.Data[0],stMsg.Data[1],stMsg.Data[2],stMsg.Data[3],stMsg.Data[4],stMsg.Data[5],stMsg.Data[6],stMsg.Data[7]);
-#endif
 
 		m_InComingMsgCount++;
         
@@ -770,17 +757,6 @@ bool cicsneoVI::Process3rdGenerationCANRx(    unsigned long lCurrentTime,
 
                 mMsg.DescriptionID = 0;
         }
-        
-        icscm_int64 t = mMsg.TimeHardware2;
-        
-        t <<= 32;
-        
-        t |= mMsg.TimeHardware;
-
-        t *= (double)(NEOVI_RED_TIMESTAMP_1_25NS/NEOVIPRO_VCAN_TIMESTAMP_1);
-
-        mMsg.TimeHardware2 = (unsigned long)(t >> 32);
-        mMsg.TimeHardware = (unsigned long)(t & 0xFFFFFFFF);
 
         mMsg.NetworkID = RetrieveAppNetID(bPacket[3]);    
         mMsg.Protocol = SPY_PROTOCOL_CAN;
@@ -878,12 +854,8 @@ int cicsneoVI::Read(unsigned char *buf, int size)
 	return iRetVal;	
 }
 
-
-
-
-
-
-
-
-
-
+int cicsneoVI::GetTimeStampForMsg(icsSpyMessage *msg, double *pTimeStamp)
+{
+	if(pTimeStamp)
+		*pTimeStamp = (NEOVI_RED_TIMESTAMP_2_25NS * ((double)msg->TimeHardware2)) + (NEOVI_RED_TIMESTAMP_1_25NS * ((double)msg->TimeHardware));
+}
