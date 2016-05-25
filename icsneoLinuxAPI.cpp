@@ -306,3 +306,4 @@ int  icsneoGetTimeStampForMsg(void* hObject, icsSpyMessage *pMsg, double *pTimeS
 
 	return iRetVal;	
 }
+
