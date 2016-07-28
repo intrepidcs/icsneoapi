@@ -1,23 +1,21 @@
 /*
-Copyright (c) 2014 Intrepid Control Systems, Inc.
+Copyright (c) 2016 Intrepid Control Systems, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of the <organization> nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
 (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
 ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
@@ -55,27 +53,36 @@ int CFTDILibLinux::GetPID(unsigned long DevType)
 	switch(DevType)
 	{
 		case NEODEVICE_VCAN3:
-		
 			PID = 0x0601;
-			
 			break;
 	
 		case NEODEVICE_FIRE:
-		
 			PID = 0x0701;
-			
 			break;
 			
-		case NEODEVICE_YELLOW:
-		
-			PID = 0x0701;
+		case NEODEVICE_PLASMA_1_11:
+		case NEODEVICE_PLASMA_1_12: 
+		case NEODEVICE_PLASMA_1_13:
+			PID = 0x0801;
+			break;
 			
+		case NEODEVICE_ION_2:
+		case NEODEVICE_ION_3:
+			PID = 0x0901;
+			break;
+			
+		case NEODEVICE_FIRE2:
+			PID = 0x1000;
+			break;
+			
+		case NEODEVICE_VCANRF:
+		
+			PID = 0x0601;
+
 			break;
 		
 		default:
-		
 			PID = 0;
-		
 			break;
 	}
 
@@ -84,7 +91,7 @@ int CFTDILibLinux::GetPID(unsigned long DevType)
 }
 
 //just always pass in 255 to here please
-int CFTDILibLinux::FindneoVIs(NeoDevice *pDevice, unsigned long DevType)
+int CFTDILibLinux::FindneoVIs(NeoDevice *pDevice, unsigned long DevTypes)
 {
 	int ret;
 	int ctr = 0;
@@ -95,70 +102,96 @@ int CFTDILibLinux::FindneoVIs(NeoDevice *pDevice, unsigned long DevType)
 	char SerialNum[50];
 	int iSerialNum;
 	bool bMatch;
+	size_t dev_type_it;
+	unsigned long SUPPORTED_DEVICES[] = {
+		NEODEVICE_VCAN3,
+		NEODEVICE_FIRE,
+		NEODEVICE_PLASMA_1_11,
+		NEODEVICE_PLASMA_1_12,
+		NEODEVICE_PLASMA_1_13,
+		NEODEVICE_ION_2,
+		NEODEVICE_ION_3,
+		NEODEVICE_FIRE2
+
+	};
 	
 #ifndef NO_FTDI
 
 	if(ftdi_init(&ftdic) < 0)
         return -1;
-	
-	PID = GetPID(DevType);
-
-    ret = ftdi_usb_find_all(&ftdic, &ftdiDevList, 0x093c, PID);		
-	
-	if(ret < 1)	 //either failed or 0 if there are no devices plugged-in	
-		return ret;
-	
-	ListItemCur = ftdiDevList;
-	
-	while(ListItemCur != NULL)
+		
+	for (dev_type_it = 0 ; dev_type_it < (sizeof(SUPPORTED_DEVICES) / sizeof(unsigned long)) ; ++dev_type_it)
 	{
-		bMatch = false;
+		unsigned long DevType = SUPPORTED_DEVICES[dev_type_it];
+		if((DevType & DevTypes) == 0)
+			continue;
+	
+		PID = GetPID(DevType);
+
+		ret = ftdi_usb_find_all(&ftdic, &ftdiDevList, 0x093c, PID);		
 		
-		ftdi_usb_get_strings(&ftdic, ListItemCur->dev, NULL, 0, NULL, 0, SerialNum, 49);	
-		iSerialNum = atoi(SerialNum);
+		if(ret < 1)	 //either failed or 0 if there are no devices plugged-in	
+			continue;
 		
-		switch(DevType)
+		ListItemCur = ftdiDevList;
+		
+		while(ListItemCur != NULL)
 		{
-			case NEODEVICE_FIRE:
+			bMatch = false;
 			
-				if(iSerialNum >= 50000 && iSerialNum <= 59999)
-					bMatch = true;		
-                    
-                if(iSerialNum >= 60200 && iSerialNum <= 79999)
+			ftdi_usb_get_strings(&ftdic, ListItemCur->dev, NULL, 0, NULL, 0, SerialNum, 49);	
+			iSerialNum = atoi(SerialNum);
+			
+			switch(DevType)
+			{
+				case NEODEVICE_FIRE:
+					if(iSerialNum >= 50000 && iSerialNum <= 59999)
+						bMatch = true;		
+					if(iSerialNum >= 60200 && iSerialNum <= 79999)
+						bMatch = true;
+					break;
+					
+				case NEODEVICE_VCAN3:
+                    if(iSerialNum >= 80000 && iSerialNum <= 120000)
+                        bMatch = true;
+                    else if(iSerialNum >= 120000 && iSerialNum <= 199999)
+                        bMatch = true;
+                    break;
+				
+				case NEODEVICE_ION_2:
+				case NEODEVICE_ION_3:
+					if(iSerialNum >= 400000 && iSerialNum <= 499999)
+						bMatch = true;
+				break;
+				
+				case NEODEVICE_PLASMA_1_11:
+				case NEODEVICE_PLASMA_1_12:
+				case NEODEVICE_PLASMA_1_13:
+					if(iSerialNum >= 300000 && iSerialNum <= 399999)
 					bMatch = true;
-			
-				break;
-			
-			case NEODEVICE_YELLOW:
-			
-				if((iSerialNum >= 40000 && iSerialNum <= 49999) ||
-				   (iSerialNum >= 100000 && iSerialNum <= 199999))
-					   bMatch = true;
-			
-				break;
+				break;	
+				
+				default:
+					bMatch = true;
+					break;
+			}
 			
 			
-			case NEODEVICE_VCAN3:
+			if(bMatch)
+			{
+				pDevice[ctr].DeviceType = DevType;
+				pDevice[ctr].NumberOfClients = 0;
+				pDevice[ctr].MaxAllowedClients = 1;
+				pDevice[ctr].SerialNumber = iSerialNum;	
+				ctr++;			
+			}
 			
-				bMatch = true;
-			
-				break;
+			ListItemCur = ListItemCur->next;
 		}
-		
-		
-		if(bMatch)
-		{
-			pDevice[ctr].DeviceType = DevType;
-			pDevice[ctr].NumberOfClients = 0;
-			pDevice[ctr].MaxAllowedClients = 1;
-			pDevice[ctr].SerialNumber = iSerialNum;	
-			ctr++;			
-		}
-		
-		ListItemCur = ListItemCur->next;
+
+		ftdi_list_free(&ftdiDevList);
 	}
 
-	ftdi_list_free(&ftdiDevList);
 	ftdi_deinit(&ftdic);
 #endif
 
@@ -183,6 +216,24 @@ bool CFTDILibLinux::OpenNeoVI(NeoDevice *pDevice)
 	
 	if(PID == 0)
 		return false;
+		
+	switch(pDevice->DeviceType)
+	{
+		case NEODEVICE_ION_2:		
+		case NEODEVICE_ION_3:
+			sprintf(SerialNumber, "%dic", pDevice->SerialNumber);
+		break;
+				
+		case NEODEVICE_PLASMA_1_12:
+		case NEODEVICE_PLASMA_1_13:
+			sprintf(SerialNumber, "%dpc", pDevice->SerialNumber);
+		break;
+		
+		default:
+			sprintf(SerialNumber, "%d", pDevice->SerialNumber);
+		break;
+		
+	}
 
     sprintf(SerialNumber, "%d", pDevice->SerialNumber);
 	

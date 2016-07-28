@@ -1,23 +1,21 @@
 /*
-Copyright (c) 2014 Intrepid Control Systems, Inc.
+Copyright (c) 2016 Intrepid Control Systems, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of the <organization> nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
 (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
 ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
@@ -31,279 +29,208 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <memory.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <map>
+#include <set>
 #include <string>
 #include <string.h>
-#include "ftdilib.h"
+#include "CFTDILib.h"
 
-void* p_neoVIObjects[256];
+class GetNeoVIObject;
+OCriticalSection neovi_objects_lock;
+std::set<cicsneoVI*> neovi_objects;
+
 bool g_bEnableAutoFirmwareUpdate = false;
 bool g_bEnableLocalSockServer = false;
 
-void icsneoInitializeAPI(void)
+static void InitializeNeoAPI(void)
 {
-	int i;
-
-	for(i = 0; i < 256; i++)
-		p_neoVIObjects[i] = 0;			
+    neovi_objects.clear();
+    g_bEnableAutoFirmwareUpdate = false;
+    g_bEnableLocalSockServer = false;		
 }
 
-bool ValidateNeoVIObject(void* hObject)
+static void ShutdownNeoAPI(void)
 {
-	int NeoObjectIndex;
-	bool bFound = false;
-
-	if(hObject == 0)
-		return false;
-
-	for(NeoObjectIndex = 0; NeoObjectIndex < 256; NeoObjectIndex++)
-	{
-		if(p_neoVIObjects[NeoObjectIndex] == 0 || p_neoVIObjects[NeoObjectIndex] != hObject)
-			continue;
-
-		bFound =  true;	
-		break;
-
-	}
-
-	return bFound;
+    neovi_objects_lock.Lock();
+    std::set<cicsneoVI*>::iterator iter = neovi_objects.begin();
+    for (; iter != neovi_objects.end(); ++iter) {
+        cicsneoVI* obj = *iter;
+        if (!obj) {
+            continue;
+        }
+        obj->CloseDevice();
+        delete obj;
+        obj = NULL;
+    }
+    neovi_objects_lock.Unlock();
 }
 
-cicsneoVI *GetNeoVIObject(void)
+static cicsneoVI* ValidateNeoVIObject(void* hObject)
 {
-	short i;
-	bool bFound = false;
-	cicsneoVI *pObj = NULL;
-	
-	for(i = 0; i < 256; i++)
-	{
-		if(p_neoVIObjects[i] != 0)
-			continue;
-
-		bFound =  true;	
-		
-		break;
-	}
-	
-	if(!bFound)
-		return NULL;
-
-    pObj = new cicsneoVI;
- 	
-	p_neoVIObjects[i] = (void*) pObj;
-	
-	return  pObj;
+    cicsneoVI* ret = NULL;
+    neovi_objects_lock.Lock();
+    std::set<cicsneoVI*>::iterator it = neovi_objects.find((cicsneoVI*)hObject);
+    if(it != neovi_objects.end())
+        ret = *it;
+    neovi_objects_lock.Unlock();
+    return ret;
 }
 
-void FreeNeoVIObject(cicsneoVI *pNeoVI)
+static cicsneoVI* MakeNeoVIObject()
 {
-	short i;
-	bool bFound = false;
-		
-	for(i = 0; i < 256; i++)
-	{
-		if(p_neoVIObjects[i] == 0 || p_neoVIObjects[i] != (void*) pNeoVI)
-			 continue;
-		
-		bFound = true;	
-		break;
-	}
-	
-	if(bFound)
-	{
-		delete ((cicsneoVI *) p_neoVIObjects[i]);
-		p_neoVIObjects[i] = 0;
-	}
+    cicsneoVI *pObj = new cicsneoVI();
+    neovi_objects_lock.Lock();
+    neovi_objects.insert(pObj);
+    neovi_objects_lock.Unlock();
+    return pObj;
+}
+
+extern "C" void __attribute__((visibility("default"))) FreeNeoVIObject(cicsneoVI *pNeoVI)
+{
+    if(!pNeoVI)
+        return;
+    neovi_objects_lock.Lock();
+    std::set<cicsneoVI*>::iterator iter = neovi_objects.find(pNeoVI);
+    if(iter != neovi_objects.end())
+    {
+        delete pNeoVI;
+        neovi_objects.erase(iter);
+    }
+    neovi_objects_lock.Unlock();
+}
+
+bool is_initialized_by_constructor = false;
+
+extern "C" void __attribute__((visibility("default"))) icsneoInitializeAPI(void)
+{
+    //puts("Shared Library is being initialized\n");
+    if (is_initialized_by_constructor) {
+        return;
+    }
+    InitializeNeoAPI();
 }
 
 
-int icsneoFindNeoDevices(unsigned long DevType, NeoDevice *pDevice, int *num)
+extern "C" void __attribute__((visibility("default"))) icsneoShutdownAPI(void)
 {
-	int ret = 0;
-	int ctr = 0;
-	int PID;
-	struct ftdi_context ftdic;
-    struct ftdi_device_list *ftdiDevList;
-	struct ftdi_device_list *ListItemCur;
-	char SerialNum[128],Manufacturer[128],Description[128];
-	int iSerialNum;
-	bool bMatch;
-	
-	if(ftdi_init(&ftdic) < 0)
-        return ret;	
-		
-	
-	PID = 0x0601;
-    ret = ftdi_usb_find_all(&ftdic, &ftdiDevList, 0x093c, PID);		
-	
-	if(ret < 1)	 //either failed or 0 if there are no devices plugged-in	
-		return ret;
-
-	ListItemCur = ftdiDevList;
-	
-	strcpy(SerialNum,"\0");
-	
-	while(ListItemCur != NULL)
-	{
-		bMatch = false;
-		
-		int ret = ftdi_usb_get_strings(&ftdic, ListItemCur->dev, Manufacturer, 128, Description, 128, SerialNum, 128);	
-		iSerialNum = atoi(SerialNum);
-		
-		switch(DevType)
-		{		
-
-			case NEODEVICE_VCAN3:
-			
-				bMatch = true;
-			
-				break;
-		}
-		
-		
-		if(bMatch)
-		{
-			pDevice[ctr].DeviceType = DevType;
-			pDevice[ctr].NumberOfClients = 0;
-			pDevice[ctr].MaxAllowedClients = 1;
-			pDevice[ctr].SerialNumber = iSerialNum;	
-			ctr++;			
-		}
-		
-		ListItemCur = ListItemCur->next;
-	}
-
-	ftdi_list_free(&ftdiDevList);
-	ftdi_deinit(&ftdic);
-
-    *num = ctr;
-
-	return ctr;
+    ShutdownNeoAPI();	
 }
 
-int  icsneoOpenNeoDevice(NeoDevice *pNeoDevice,	
-								 void **hObject, 
-								 unsigned char * bNetworkIDs,
-								 int bConfigRead, 
-								 int iOptions)
+__attribute__((constructor)) void initialize_shared_library(void)
 {
-	cicsneoVI *pNeoVIObj;
-	
-	int ret;
-	
-	if(!pNeoDevice)
-		return 0;
-	
-    pNeoVIObj = GetNeoVIObject();
+    icsneoInitializeAPI();
+    is_initialized_by_constructor = true;
+}
 
-	if(!pNeoVIObj)
-		return 0;
+__attribute__((deconstructor)) void deinitialize_shared_library(void)
+{
+    icsneoShutdownAPI();
+    is_initialized_by_constructor = false;
+}
+    
+extern "C" int __attribute__((visibility("default"))) icsneoClosePort(void* hObject, int * pNumberOfErrors)
+{
+    cicsneoVI *pOb = ValidateNeoVIObject(hObject);
+    if (!pOb) {
+        return 0;
+    }
 
-	*hObject = (void*) pNeoVIObj;
+    *pNumberOfErrors = 0;
 
-	if(!pNeoVIObj->OpenDevice(pNeoDevice))
+    return pOb->CloseDevice() ? 1 : 0;
+}
+
+
+extern "C" void __attribute__((visibility("default"))) icsneoFreeObject(void* hObject)
+{
+    FreeNeoVIObject(ValidateNeoVIObject(hObject));
+}
+
+
+extern "C" int __attribute__((visibility("default"))) icsneoGetMessages(void* hObject, icsSpyMessage * pMsg, int * pNumberOfMessages,
+                               int * pNumberOfErrors)
+{
+    int iRetVal;
+
+    cicsneoVI *pOb = ValidateNeoVIObject(hObject);
+    if (!pOb) {
+        return 0;
+    }
+
+    iRetVal = pOb->ReadOutMessages(pMsg, *pNumberOfMessages);
+    
+    *pNumberOfErrors = 0;
+
+    return iRetVal;
+}
+
+
+extern "C" int __attribute__((visibility("default")))icsneoTxMessages(void* hObject, icsSpyMessage *pMsg,	int lNetworkID, int lNumMessages)
+{
+    cicsneoVI *pOb = ValidateNeoVIObject(hObject);
+    if (!pOb) {
+        return 0;
+    }
+
+     return pOb->TransmitMessages(pMsg, lNetworkID, lNumMessages);
+}
+
+extern "C" int __attribute__((visibility("default"))) icsneoFindNeoDevices(unsigned long DeviceTypes, NeoDevice *pNeoDevice, int *pNumDevices)
+{
+    int found = CFTDILibLinux::FindneoVIs(pNeoDevice, DeviceTypes);
+    if (found < 0)
+        return 0;
+    if(pNumDevices)
+        *pNumDevices = found;
+    return 1;
+}
+ 
+
+extern "C" int __attribute__((visibility("default"))) icsneoOpenNeoDevice(NeoDevice *pNeoDevice,	
+                                 void** hObject, 
+                                 unsigned char * bNetworkIDs,
+                                 int bConfigRead, 
+                                 int iOptions)
+{
+    if(!pNeoDevice || !hObject)
+        return 0;
+
+    if(*hObject)
+        FreeNeoVIObject(ValidateNeoVIObject(*hObject));
+
+    cicsneoVI* pNeoVIObj = MakeNeoVIObject();
+
+    if(!pNeoVIObj)
+        return 0;
+
+    *hObject = pNeoVIObj;
+
+    if(!pNeoVIObj->OpenDevice(pNeoDevice))
     {
         FreeNeoVIObject(pNeoVIObj);
         *hObject = 0;
-        printf("OpenDevice Failed with ret = %d\n",ret);
         return 0;
     }
-		
-	return 1;
+        
+    return 1;
 }
 
-int  icsneoTxMessages(void* hObject, icsSpyMessage *pMsg,	int lNetworkID, int lNumMessages)
+extern "C" int __attribute__((visibility("default"))) icsneoGetTimeStampForMsg(void* hObject, icsSpyMessage *pMsg, double *pTimeStamp)
+{	           
+    cicsneoVI *pOb = ValidateNeoVIObject(hObject);
+    if (!pOb || !pTimeStamp) {
+        return 0;
+    }
+   
+    return pOb->GetTimeStampForMsg(pMsg, pTimeStamp);
+}
+
+extern "C" int __attribute__((visibility("default"))) icsneoWaitForRxMessagesWithTimeOut(void* hObject, unsigned int iTimeOut)
 {
-	if(!ValidateNeoVIObject(hObject))
-		return false;
-	
-	cicsneoVI *pOb = (cicsneoVI *) hObject;
+    
+    cicsneoVI *pOb = ValidateNeoVIObject(hObject);
+    if (!pOb) {
+        return 0;
+    }
 
- 	return pOb->TransmitMessages(pMsg, lNetworkID, lNumMessages);
+    return pOb->WaitForRxMessagesWithTimeOut(iTimeOut);
 }
-
-int icsneoClosePort(void* hObject, int * pNumberOfErrors)
-{
-	bool bActuallyClosed;
-	
-	if(!ValidateNeoVIObject(hObject))
-		return false;
-
-	cicsneoVI *pOb = (cicsneoVI *) hObject;
-	
-	if(!pOb->CloseDevice())
-		return false;
-	
-	return true;
-}
-
-void  icsneoFreeObject(void* hObject)
-{
-	if(!ValidateNeoVIObject(hObject))
-		return;
-
-	FreeNeoVIObject((cicsneoVI *)hObject);
-}
-
-int  icsneoGetMessages(void* hObject, icsSpyMessage * pMsg, int * pNumberOfMessages,
-							   int * pNumberOfErrors)
-{
-	int iRetVal;
-
-	if(!ValidateNeoVIObject(hObject))
-		return false;
-
-	cicsneoVI *pOb = (cicsneoVI *) hObject;
-
-	iRetVal = pOb->ReadOutMessages(pMsg, *pNumberOfMessages);
-
-	return iRetVal;
-}
-
-void icsneoShutdownAPI(void)
-{
-	int i;
-	cicsneoVI *pOb;
-	bool bActuallyClosed;
-
-	for(i = 0; i < 256; i++)
-	{
-		if (p_neoVIObjects[i] != 0)
-		{
-			pOb = (cicsneoVI *) p_neoVIObjects[i];
-			pOb->CloseDevice();
-			delete pOb;
-			p_neoVIObjects[i] = 0;
-		}
-	}
-}
-
-int  icsneoWaitForRxMessagesWithTimeOut(void* hObject, unsigned int iTimeOut)
-{
-	int iRetVal;
-
-	if(!ValidateNeoVIObject(hObject))
-		return false;
-	
-	cicsneoVI *pOb = (cicsneoVI *) hObject;
-
-	iRetVal = pOb->WaitForRxMessagesWithTimeOut(iTimeOut);
-
-	return iRetVal;
-}
-
-
-int  icsneoGetTimeStampForMsg(void* hObject, icsSpyMessage *pMsg, double *pTimeStamp)
-{
-	int iRetVal;
-
-	if(!ValidateNeoVIObject(hObject))
-		return false;
-
-	cicsneoVI *pOb = (cicsneoVI *) hObject;
-
-	iRetVal = pOb->GetTimeStampForMsg(pMsg, pTimeStamp);
-
-	return iRetVal;	
-}
-

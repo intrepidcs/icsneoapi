@@ -1,23 +1,21 @@
 /*
-Copyright (c) 2014 Intrepid Control Systems, Inc.
+Copyright (c) 2016 Intrepid Control Systems, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of the <organization> nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
 (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
 ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
@@ -26,8 +24,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "cicsneoVI.h"
-#include <sys/time.h>
 #include "OSAbstraction.h"
+#include "CFTDILib.h"
+#include <sys/time.h>
 #include <time.h>
 
 cicsneoVI::cicsneoVI() 
@@ -38,6 +37,8 @@ cicsneoVI::cicsneoVI()
     m_pRxThread = NULL;
     m_bneoShutdown = false;
     m_lReadDataCount = 0;   
+    m_lReadDataIndexIn = 0;
+    m_lReadDataIndexOut = 0;
     m_pcsReceivedData = new OCriticalSection();
     m_pMsgBuffer = new icsSpyMessage[MAX_INCOMING_MSG_BUFFER_SIZE + 1];
     m_InComingMsgCount = 0; 
@@ -50,14 +51,25 @@ cicsneoVI::cicsneoVI()
 		m_bNetworkIDs[iCount] = iCount;
     }
 
+    bReadData = new unsigned char[NEOVI_READBUFFSIZE];	
+    bTempPacketBufferHost = new unsigned char[NEOVI_READBUFFSIZE];	
+    m_ftdic = ftdi_new();
+
 }
 cicsneoVI::~cicsneoVI()
 {
+    if (m_bDeviceOpen)
+        CloseDevice();
+
     delete m_pRxMsgAvailableEvent;
     delete m_pRxThread;
     m_bneoShutdown = true;
     delete m_pcsReceivedData;
     delete [] m_pMsgBuffer;
+    delete [] bReadData;
+    delete [] bTempPacketBufferHost;
+    if (m_ftdic)
+        ftdi_free(m_ftdic);
 }
 
 int cicsneoVI::ReadOutMessages(icsSpyMessage *msg, int &lNumberOfMessages)
@@ -115,112 +127,157 @@ bool cicsneoVI::AddMsgToRXQueue(icsSpyMessage &stMsg, bool bSetEvent)
 
 bool cicsneoVI::TransmitMessages(icsSpyMessage *msg,unsigned long lNetworkID,unsigned long lNumMessages)
 {
-    unsigned char bData[16];
-	unsigned long	lCount;
-	unsigned long	lNumHeaderBytes;
-	unsigned long	lByteCount;
-	unsigned long	lMaxCount;
-	unsigned long	lNumberMessageBytes;
-	unsigned long	lMessageCount;
-	unsigned long	lCheckSum;
-	unsigned long	lByteIndex;
-	unsigned long	lResult;
-	unsigned long	lTempDescriptionID;
-    
-    // set the network ID
-	bData[0] = (unsigned char) lNetworkID;
-    switch (lNetworkID)
+    int             num_bytes_data = 0;
+    int             i = 0;
+    unsigned char   data[128];
+ 
+	switch (lNetworkID)
 	{
-        case NETID_HSCAN : //	high speed CAN
-		case NETID_MSCAN : //	medium speed CAN
-		case NETID_SWCAN : //	single wire CAN
-		case NETID_LSFTCAN : //	low speed fault tolerant CAN        			
-			
-			// 2 header bytes standard ID only
-            bData[1] = (unsigned char)(msg->ArbIDOrHeader >> 3);	// standard id high ( shift left 3 bits )
-            bData[2] = (unsigned char)((msg->ArbIDOrHeader & 7) << 5);	// mask off upper five bits
-            lByteCount = 3;
-           
-            unsigned char len_options_byte;
-            len_options_byte = msg->NumberBytesData;
-            //len_options_byte |= 0x80;
-                   
-            bData[lByteCount] = len_options_byte;
-            lMaxCount = msg->NumberBytesData;
-            if (lMaxCount > 8) lMaxCount = 8;
-            // Add the data bytes
-            for (lCount = 0;lCount < lMaxCount; lCount++)
-            {
-                lByteCount++;
-                bData[lByteCount] = msg->Data[lCount];
-            }
-                
-    }     
-  
-    unsigned long lSum = 0;
-	int i;
+	case NETID_DEVICE:
+	case NETID_HSCAN:
+    case NETID_HSCAN2:
+    case NETID_MSCAN:
+    case NETID_HSCAN3:
+    case NETID_SWCAN:
+    case NETID_SWCAN2:
+    case NETID_LSFTCAN:
+    case NETID_LSFTCAN2:
+    case NETID_HSCAN4:
+    case NETID_HSCAN5:
+    case NETID_HSCAN6:
+    case NETID_HSCAN7:   
+    	break;
+    default:
+    	return false;
+    } 
 
-    unsigned long packet_byte_count=0; // num bytes in formal packet
+    data[0] = 0xAA;
+    data[1] = NETID_RED;
+    data[2] = 0; //data length goes here once we've built the frame
+    data[3] = 0;
+    data[4] = lNetworkID & 0xff;
+    data[5] = (lNetworkID >> 8) & 0xff;
+    data[6] = 0; // byte count byte for inner message
+	data[7] = (msg->DescriptionID >> 8) & 0xff;
+	data[8] = msg->DescriptionID & 0xff;
 
-	if(lByteCount > 10240)
-		return false;       
-        
-         unsigned char* m_TxQueueTempBuf;
-         m_TxQueueTempBuf = new unsigned char[10 * 1024]; 
+    i = 9;
 
-       	//push header
-        if(m_TxQueueTempBuf)
+	if(msg->StatusBitField & SPY_STATUS_XTD_FRAME)
+	{
+		data[i++] = (unsigned char)(msg->ArbIDOrHeader >> 21);	
+	    data[i++] = (unsigned char)((((msg->ArbIDOrHeader & 0x001C0000) >> 13) & 0xFF) + (((msg->ArbIDOrHeader & 0x00030000) >> 16) & 0xFF) | 8); 
+	    data[i++] = ((icsSpyMessageJ1850 *) msg)->Header[1];
+	    data[i++] = ((icsSpyMessageJ1850 *) msg)->Header[0];
+	}
+	else
+	{
+	    data[i++] = (unsigned char)(msg->ArbIDOrHeader >> 3);	
+	    data[i++] = (unsigned char)((msg->ArbIDOrHeader & 7) << 5);
+	}
+
+    data[i] = 0;
+
+    if(msg->StatusBitField2 & SPY_STATUS2_HIGH_VOLTAGE)
+    {
+        if(lNetworkID == NETID_SWCAN || lNetworkID == NETID_SWCAN2)
+            data[i] = 0x80;
+    }
+
+    if (msg->StatusBitField & SPY_STATUS_REMOTE_FRAME)
+    {
+    	data[i] |= msg->NumberBytesData | 0x40;
+    }
+    else
+    {
+        num_bytes_data = msg->NumberBytesData;
+
+        if(msg->Protocol != SPY_PROTOCOL_CANFD)
         {
-            m_TxQueueTempBuf[packet_byte_count++] = 0xAA; 
-            m_TxQueueTempBuf[packet_byte_count++] = 0xD1; 
-            m_TxQueueTempBuf[packet_byte_count++] = 0x00;             
+            if(num_bytes_data > 8)
+                num_bytes_data = 8;
+
+            data[i++] |= num_bytes_data;
+        }
+        else
+        {
+            data[i++] = 15;
+
+            if(num_bytes_data <= 8)
+                data[i] = num_bytes_data;
+            else if(num_bytes_data <= 12)
+            {
+                num_bytes_data = 12;
+                data[i] = 9;
+            }
+            else if(num_bytes_data <= 16)
+            {
+                num_bytes_data = 16;
+                data[i] = 10;
+            }
+            else if(num_bytes_data <= 20)
+            {
+                num_bytes_data = 20;
+                data[i] = 11;
+            }
+            else if(num_bytes_data <= 24)
+            {
+                num_bytes_data = 24;
+                data[i] = 12;
+            }
+            else if(num_bytes_data <= 32)
+            {
+                num_bytes_data = 32;
+                data[i] = 13;
+            }
+            else if(num_bytes_data <= 48)
+            {
+                num_bytes_data = 48;
+                data[i] = 14;
+            }
+            else
+            {
+                num_bytes_data = 64;
+                data[i] = 15;
+            }
+
+            data[i++] |= (msg->StatusBitField3 & SPY_STATUS3_CANFD_BRS) ? 0x80 : 0;
+
+            // if there's more than 8 bytes we need an EDP
+            if((num_bytes_data > 8) && (!msg->ExtraDataPtr || !msg->ExtraDataPtrEnabled))
+                return false;
+           
         }
 
+        const unsigned char* src = (msg->ExtraDataPtrEnabled && msg->ExtraDataPtr) ?
+            (const unsigned char*)msg->ExtraDataPtr : msg->Data;
 
-        //push data bytes
-	lByteCount++; // for some reason lByteCount is always len-1 where payload has len bytes
-    
-   if(m_TxQueueTempBuf)
-	memcpy(&m_TxQueueTempBuf[packet_byte_count], bData, lByteCount);
+        int src_count = msg->NumberBytesData < num_bytes_data ? msg->NumberBytesData : num_bytes_data;
 
-    packet_byte_count += lByteCount;
+        memcpy(&data[i], src, src_count); //copy the data over
+        memset(&data[i + src_count], 0, num_bytes_data - src_count); //0 pad anything extra
+    	
+        i += num_bytes_data;
+    }
     
-     //if using chksum (short message mode) do it
-     
-     #if 1
+    //fill in the byte count byte; this is number of bytes after the network id
+    data[6] = (unsigned char)((lNetworkID & 0xf) + ((i - 6) << 4));
 
-    for(i = 1; i < (int) packet_byte_count; i++)
-			lSum += m_TxQueueTempBuf[i];
-        
-    lSum = ~lSum;
-    lSum++;
-    
-    if(m_TxQueueTempBuf)
-    m_TxQueueTempBuf[packet_byte_count++] = (unsigned char) lSum;
-    
-    #endif
-    
+    //fill in the outer payload length -- for some unknown reason this needs to +1 the real length
+    data[2] = (unsigned char)((i + 1) & 0xff);
+    data[3] = (unsigned char)(((i + 1) >> 8) & 0xff);
+
+    // align to 16 bit boundry
+    // TODO: don't do this on a RAD-GALAXY
+    if(i & 1) 
+        data[i++] = 'A';
+
     if(!m_bDeviceOpen)
         return 0;    
-        
-#ifdef DEBUG
-        
-   //unsigned char buf9[] = {0xAA,0xC1,0x00,0x01,0xA0,0x00,0x07,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x7B/*,0x41*/};
- //  unsigned char buf9[] = {0xAA,0xD1,0x00,0x01,0x20,0x00,0x08,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0X08,0xE2};
-   
-   for(int i=0;i<packet_byte_count;i++)
-   {
-       printf("%x-",m_TxQueueTempBuf[i]);
-   }
 
-#endif
+	int written = ftdi_write_data(m_ftdic, data, i); 
 
-	int written = ftdi_write_data(&m_ftdic, m_TxQueueTempBuf, packet_byte_count); 
-  
-      if(m_TxQueueTempBuf)
-        delete [] m_TxQueueTempBuf;
-     
-    return written;
+    return written > 0;
 
 }
 
@@ -239,47 +296,43 @@ bool cicsneoVI::OpenDevice(NeoDevice *pDevice)
 	if(m_bDeviceOpen)
 		return true;		
 	
-	if(ftdi_init(&m_ftdic) < 0)
+	if(!m_ftdic)
         return false;
 	
-	PID = 0x0601;
+	PID = CFTDILibLinux::GetPID(pDevice->DeviceType);
 	
 	if(PID == 0)
 		return false;
 
     sprintf(SerialNumber, "%d", pDevice->SerialNumber);
 	
-	iRetVal = ftdi_usb_open_desc(&m_ftdic, 0x093C, PID, NULL, SerialNumber);
-	//iRetVal = ftdi_usb_open(&m_ftdic, 0x093C, PID);
+	iRetVal = ftdi_usb_open_desc(m_ftdic, 0x093C, PID, NULL, SerialNumber);
 	if(iRetVal < 0)
 		return iRetVal;
 	
 	m_bDeviceOpen = true;
+
+    ftdi_usb_reset(m_ftdic);
 	
-	ftdi_set_baudrate(&m_ftdic, 500000);
-	
-	iRetVal = ftdi_read_data_set_chunksize(&m_ftdic, 16 * 1024);    
+	ftdi_set_baudrate(m_ftdic, 500000); 
+
+    PurgeBuffers();  
         
     //Setup device before transmission or reception starts
     
-    unsigned char buf[] = {0xAA, 0x2B, 0x07,0x00,0xCE,0xAA,0x1B,0xA3,0x42};
-    ftdi_write_data(&m_ftdic, buf, sizeof(buf)); 
-    unsigned char buf1[] = {0xAA,0x1B,0xA1,0x44};
-    ftdi_write_data(&m_ftdic, buf1, sizeof(buf1));  
-    unsigned char buf2[] = {0xAA,0x9B,0xA2,0xB6,0x9F,0x02,0xDB,0x6A,0xD0,0xF7,0x6D,0xF3};
-    ftdi_write_data(&m_ftdic, buf2, sizeof(buf2));
-    unsigned char buf3[] = {0xAA,0x0B,0x06,0x00,0xB6};
-    ftdi_write_data(&m_ftdic, buf3, sizeof(buf3));
-    unsigned char buf4[] = {0xAA,0x1B,0xB7,0x2E};
-    ftdi_write_data(&m_ftdic, buf4, sizeof(buf4));
-    unsigned char buf5[] = {0xAA,0x30,0x02,0x06,0x10,0xB8};
-    ftdi_write_data(&m_ftdic, buf5, sizeof(buf5));
-    unsigned char buf6[] = {0xAA,0x0B,0x06,0x00,0xB6,0x41};
-    ftdi_write_data(&m_ftdic, buf6, sizeof(buf6));
-    unsigned char buf7[] = {0xAA,0x0B,0x06,0x00,0xBC,0x41};
-    ftdi_write_data(&m_ftdic, buf7, sizeof(buf7));
-    unsigned char buf8[] = {0xAA,0x2B,0x07,0x01,0xCD};
-    ftdi_write_data(&m_ftdic, buf8, sizeof(buf8));
+    unsigned char disable_net_comms[] = {0xAA, 0x2B, 0x07,0x00,0xCE};
+    ftdi_write_data(m_ftdic, disable_net_comms, sizeof(disable_net_comms));
+
+    unsigned char clear_buffer[1024];
+    while (ftdi_read_data(m_ftdic, clear_buffer, 1024) > 0); // clear out stale data
+    
+    unsigned char go_online[] = {
+        0xAA, 0x1B, 0xA3, 0x42, 0xAA, 0x1B, 0xA1, 0x44, 0xAA, 0x9B, 0xA2, 0xB6, 0x9F,
+        0x02, 0xDB, 0x6A, 0xD0, 0xF7, 0x6D, 0xF3, 0xAA, 0x0B, 0x06, 0x00, 0xB6, 0xAA,
+        0x1B, 0xB7, 0x2E, 0xAA, 0x30, 0x02, 0x06, 0x10, 0xB8, 0xAA, 0x0B, 0x06, 0x00,
+        0xB6, 0x41, 0xAA, 0x0B, 0x06, 0x00, 0xBC, 0x41, 0xAA, 0x2B, 0x07, 0x01, 0xCD
+    };
+    ftdi_write_data(m_ftdic, go_online, sizeof(go_online));
                   
     m_pRxThread = new CNeoVIReadThread();
 
@@ -295,36 +348,25 @@ unsigned long cicsneoVI::CNeoVIReadThread::Run()
 	bool bOkayToRead = false;
 	bool bResult = true;				
 	unsigned long dwBytes; 
-    FILE* f1;
-
 	unsigned long lCurrentTime;
 	unsigned char *pData = NULL;					
 	unsigned int read_size;
 	unsigned int LastTime;
-    
-    read_size = 64 * 1024;    
     int iRetVal;
+      
+
+    if(ftdi_read_data_get_chunksize(neovi->m_ftdic, &read_size) != 0)
+        read_size = 4096;
 	
 	pData = new unsigned char[read_size];
-    
-    #ifdef DEBUG
-    
-    f1 = fopen("test.txt","a");
-    
-    #endif
     
     while(1)
     {        
         if(neovi->m_bneoShutdown)
 			break; 
       
-         iRetVal = ftdi_read_data(&neovi->m_ftdic, pData, read_size);  
+         iRetVal = ftdi_read_data(neovi->m_ftdic, pData, read_size);  
          
-         #ifdef DEBUG
-        
-         for(int i=0;i<iRetVal;i++)
-             fprintf(f1,"%0x-",pData[i]); 
-        #endif
        
          if(iRetVal > 0)
          {
@@ -337,15 +379,13 @@ unsigned long cicsneoVI::CNeoVIReadThread::Run()
             unsigned int microseconds = tv.tv_usec;
 	
             lCurrentTime =  (seconds * 1000) + (microseconds / 1000);
-            neovi->ParseInputStream(lCurrentTime, pData, read_size);  
+            neovi->ParseInputStream(lCurrentTime, pData, iRetVal);  
          }
                       
     }
     
     if(pData)
 		delete [] pData;  
-        
-        fclose(f1);
 
 	return 0;
 }
@@ -369,9 +409,6 @@ bool cicsneoVI::ParseInputStream(unsigned long lCurrentTime,
 	bool bFoundStartFrame=false;
 	bool bFrameError=false; 
     
-    bReadData = new unsigned char[NEOVI_READBUFFSIZE];	
-    bTempPacketBufferHost = new unsigned char[NEOVI_READBUFFSIZE];	
-    
     ///////////////////////////////////////////////////////////////////////////
 	// first, add the neCoreMiniToSpyw data to the FIFO
 	///////////////////////////////////////////////////////////////////////////
@@ -390,7 +427,6 @@ bool cicsneoVI::ParseInputStream(unsigned long lCurrentTime,
 		for(iCount = 0; iCount < lNumberOfBytes;iCount++)
 		{
 			// add the byte
-            if(bReadData)
 			bReadData[m_lReadDataIndexIn] = bDataOutput[iCount];
 			// increae the count
 			m_lReadDataCount++;	
@@ -534,13 +570,7 @@ bool cicsneoVI::ParseInputStream(unsigned long lCurrentTime,
 			if (m_lReadDataCount)
 				m_lReadDataCount--;
 		}
-	}
-    
-     if(bReadData)
-          delete [] bReadData;
-                  
-     if(bTempPacketBufferHost)
-         delete [] bTempPacketBufferHost;          
+	}       
     
 	return true;                                     
 }
@@ -577,7 +607,13 @@ bool cicsneoVI::ProcessRxPacketNeoRed(  unsigned long lCurrentTime,
             case NETID_MSCAN:
             case NETID_HSCAN3:
             case NETID_SWCAN:
+            case NETID_SWCAN2:
             case NETID_LSFTCAN:
+            case NETID_LSFTCAN2:
+            case NETID_HSCAN4:
+            case NETID_HSCAN5:
+            case NETID_HSCAN6:
+            case NETID_HSCAN7:
                     Process3rdGenerationCANRx(lCurrentTime,bPacket,lNumberOfBytes);
                 break;       
 
@@ -619,18 +655,7 @@ bool cicsneoVI::ProcessRxPacket(unsigned long lCurrentTime, unsigned char *bPack
 	lTimeStampIndex = 1;
     
     lNetwork = bPacket[0]&0xF; 
-    
-#ifdef DEBUG
-    //unsigned char buf9[] = {0xAA,0xD1,0x00,0x01,0x20,0x00,0x08,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0X08,0xE2};
-   //c-1e-0-1-0-0-14-0-0-8-0-1-2-3-4-5-6-7-8-0-0-89-90-a-d8-41-0-0-0
-//   0c 1e 00 01 00 00 14 00 00 08 00 01 02 03 04 05 06 07 08 00 00 
-    for(int i=0;i<lNumberOfBytes;i++)
-        printf("%0x-",bPacket[i]);
-        
-        printf("lNetwork = %0x\n",(unsigned int)lNetwork);
-        
-#endif    
-	    
+          
     switch(lNetwork)
 	{
         case NETID_RED:
@@ -775,23 +800,15 @@ bool cicsneoVI::CloseDevice(void)
 		return true;
         
     m_pRxThread->End();
-    
-    unsigned char cbuf[] = {0xAA, 0x2B, 0x07,0x00,0xCE};
-    ftdi_write_data(&m_ftdic,cbuf,sizeof(cbuf));   
-    unsigned char cbuf1[] = {0xAA,0x1B,0xC3,0X22,0xAA,0x2B,0x07,0x00,0xCE};
-    ftdi_write_data(&m_ftdic,cbuf1,sizeof(cbuf1));  
-    unsigned char cbuf2[] = {0xAA,0x30,0x02,0x06,0x04,0xC4};
-    ftdi_write_data(&m_ftdic,cbuf2,sizeof(cbuf2));
+
+    unsigned char go_offline[] = {
+        0xAA, 0x2B, 0x07, 0x00, 0xCE, 0xAA, 0x1B, 0xC3, 0x22, 0xAA, 0x2B, 0x07, 
+        0x00, 0xCE, 0xAA, 0x30, 0x02, 0x06, 0x04, 0xC4
+    };
+    ftdi_write_data(m_ftdic, go_offline, sizeof(go_offline));
     		
-	iRetVal = ftdi_usb_close(&m_ftdic);
-    iRetVal = ftdi_usb_reset(&m_ftdic);
-	
-	if(iRetVal < 0)
-	{
-		//error of some kind
-	}
-	
-	ftdi_deinit(&m_ftdic);    
+	ftdi_usb_close(m_ftdic);
+    ftdi_usb_reset(m_ftdic);
    
 	m_bDeviceOpen = false;
     m_bneoShutdown = true;
@@ -806,7 +823,7 @@ bool cicsneoVI::SetLatencyTimer(unsigned char latency)
 	if(!m_bDeviceOpen)
 		return false;
 		
-	iRetVal = ftdi_set_latency_timer(&m_ftdic, latency);
+	iRetVal = ftdi_set_latency_timer(m_ftdic, latency);
 
 	return iRetVal == 0 ? true : false;
 }
@@ -817,41 +834,10 @@ bool cicsneoVI::PurgeBuffers(void)
 	
 	if(!m_bDeviceOpen)
 		return false;
-		
-	ftdi_usb_purge_rx_buffer(&m_ftdic);
-	ftdi_usb_purge_tx_buffer(&m_ftdic);
 
-	return true;
-}
+	iRetVal = ftdi_usb_purge_buffers(m_ftdic);
 
-int cicsneoVI::Write(unsigned char *buf, int size)
-{
-	int iRetVal;
-	
-	if(!m_bDeviceOpen)
-		return 0;
-	
-	iRetVal = ftdi_write_data(&m_ftdic, buf, size);
-
-	return iRetVal;
-}
-
-int cicsneoVI::Read(unsigned char *buf, int size)
-{
-	int iRetVal;
-	
-	if(!m_bDeviceOpen)
-    {
-        printf("device not opened!\n");
-		return 0;
-    }
-	
-	if(size > 4096)
-		size = 4096;	
-	
-	iRetVal = ftdi_read_data(&m_ftdic, buf, size);
-
-	return iRetVal;	
+	return iRetVal == 0;
 }
 
 int cicsneoVI::GetTimeStampForMsg(icsSpyMessage *msg, double *pTimeStamp)

@@ -2,3 +2,5 @@
 *.o
 icsneo_sample
 *.log
+icsscand
+.vscode/
