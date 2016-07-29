@@ -1,34 +1,38 @@
 CXX=g++
 CC=gcc
-CFLAGS=-g -c -I. -I./OsAbstraction
-LDFLAGS=
+CFLAGS=-g -c -fpic -fvisibility=hidden -fvisibility-inlines-hidden -O2 -Isrc/
+LDFLAGS=-O2 -s -Wl,--unresolved-symbols=report-all -Wl,--no-allow-shlib-undefined -shared -fvisibility=hidden -fvisibility-inlines-hidden
+LIBS=-lpthread -lftdi -lrt -lpcap
 AR=ar
 
-all: lib
+all: shared lib
 
-lib: CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OsAbstraction/OCriticalSection.o OsAbstraction/OEvent.o OsAbstraction/OSAbstraction.o OsAbstraction/OThread.o
-	$(AR) rcs libicsneo.a CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o
+shared: CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o
+	$(CXX) $(LDFLAGS) -o libicsneoapi.so CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o $(LIBS)
 
-CFTDILib.o: CFTDILib.cpp
-	$(CXX) $(CFLAGS) CFTDILib.cpp
+lib: CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o
+	$(AR) rcs libicsneoapi.a CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o
 
-cicsneoVI.o: cicsneoVI.cpp
-	$(CXX) $(CFLAGS) cicsneoVI.cpp
+CFTDILib.o: src/CFTDILib.cpp
+	$(CXX) $(CFLAGS) src/CFTDILib.cpp
 
-icsneoLinuxAPI.o: icsneoLinuxAPI.cpp
-	$(CXX) $(CFLAGS) icsneoLinuxAPI.cpp
+cicsneoVI.o: src/cicsneoVI.cpp
+	$(CXX) $(CFLAGS) src/cicsneoVI.cpp
 
-OsAbstraction/OCriticalSection.o: OsAbstraction/OCriticalSection.cpp
-	$(CXX) $(CFLAGS) OsAbstraction/OCriticalSection.cpp
+icsneoLinuxAPI.o: src/icsneoLinuxAPI.cpp
+	$(CXX) $(CFLAGS) src/icsneoLinuxAPI.cpp
 
-OsAbstraction/OEvent.o: OsAbstraction/OEvent.cpp
-	$(CXX) $(CFLAGS) OsAbstraction/OEvent.cpp
+OCriticalSection.o: src/OCriticalSection.cpp
+	$(CXX) $(CFLAGS) src/OCriticalSection.cpp
 
-OsAbstraction/OSAbstraction.o: OsAbstraction/OSAbstraction.cpp
-	$(CXX) $(CFLAGS) OsAbstraction/OSAbstraction.cpp
+OEvent.o: src/OEvent.cpp
+	$(CXX) $(CFLAGS) src/OEvent.cpp
 
-OsAbstraction/OThread.o: OsAbstraction/OThread.cpp
-	$(CXX) $(CFLAGS) OsAbstraction/OThread.cpp
+OSAbstraction.o: src/OSAbstraction.cpp
+	$(CXX) $(CFLAGS) src/OSAbstraction.cpp
+
+OThread.o: src/OThread.cpp
+	$(CXX) $(CFLAGS) src/OThread.cpp
 
 clean:
-	rm -rf *.o libicsneo.a OsAbstraction/*.o
+	rm -rf *.o libicsneo.a libicsneoapi.so

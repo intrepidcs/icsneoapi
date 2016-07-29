@@ -1,6 +1,5 @@
 *.a
 *.o
-icsneo_sample
+*.so
 *.log
-icsscand
 .vscode/
