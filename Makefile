@@ -2,7 +2,7 @@ CXX=g++
 CC=gcc
 CFLAGS=-g -c -fpic -fvisibility=hidden -fvisibility-inlines-hidden -O2 -Isrc/
 LDFLAGS=-O2 -s -Wl,--unresolved-symbols=report-all -Wl,--no-allow-shlib-undefined -shared -fvisibility=hidden -fvisibility-inlines-hidden
-LIBS=-lpthread -lftdi -lrt -lpcap
+LIBS=-lpthread -lftdi
 AR=ar
 
 all: shared lib
