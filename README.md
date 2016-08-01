@@ -28,6 +28,6 @@ You may wish to install the library and headers into your global folders so that
 ```
 $ sudo cp libicsneoapi.so /usr/lib/x86_64-linux-gnu/
 $ sudo mkdir /usr/include/ics
-$ sudo cp icsnVC40.h /usr/include/ics/
-$ sudo cp icsneo40API.h /usr/include/ics/
+$ sudo cp src/icsnVC40.h /usr/include/ics/
+$ sudo cp src/icsneo40API.h /usr/include/ics/
 ```
