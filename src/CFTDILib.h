@@ -24,7 +24,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include <stdio.h>
-#include <libftdi1/ftdi.h>
+#include <ftdi.h>
 #include <string.h>
 #include <wchar.h>
 #include <wctype.h>

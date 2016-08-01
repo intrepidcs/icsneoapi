@@ -6,7 +6,7 @@ A BSD-licensed open source library for communicating with vehicle network tools 
 Requires libftdi1.
 
 ```
-$ sudo apt-get install libftdi1
+$ sudo apt-get install libftdi1 libftdi-dev
 ```
 
 On some distros (for example Ubuntu 14.04) libftdi1 doesn't create a symlink correctly for 64-bit versions. 
