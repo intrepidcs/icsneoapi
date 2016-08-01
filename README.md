@@ -1,7 +1,7 @@
 icsneoapi
 =========
 
-An open source library for communicating with vehicle network tools developed by Intrepid Control Systems.
+An BSD-licensed open source library for communicating with vehicle network tools developed by Intrepid Control Systems. This library supports only a subset of devices and functionality.
 
 Requires libftdi1.
 
@@ -15,4 +15,19 @@ You'll need to point libftdi.so -> libftdi.so.1.
 ```
 $ cd /usr/lib/x86_64-linux-gnu
 $ sudo ln -s libftdi.so.1 libftdi.so
+```
+
+To build the library, simply make it.
+
+```
+$ make
+```
+
+You may wish to install the library and headers into your global folders so that other projects can utilize them. For example, on Ubuntu
+
+```
+$ sudo cp libicsneoapi.so /usr/lib/x86_64-linux-gnu/
+$ sudo mkdir /usr/include/ics
+$ sudo cp icsnVC40.h /usr/include/ics/
+$ sudo cp icsneo40API.h /usr/include/ics/
 ```
