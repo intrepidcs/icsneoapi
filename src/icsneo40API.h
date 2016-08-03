@@ -66,6 +66,8 @@ int  ICSCC icsneoGetVCAN3Settings(void *hObject, SVCAN3Settings *pSettings, int 
 int  ICSCC icsneoSetVCAN3Settings(void *hObject, SVCAN3Settings *pSettings, int iNumBytes, int bSaveToEEPROM);
 int  ICSCC icsneoGetFireSettings(void *hObject, SFireSettings *pSettings, int iNumBytes);
 int  ICSCC icsneoSetFireSettings(void *hObject, SFireSettings *pSettings, int iNumBytes, int bSaveToEEPROM);
+int  ICSCC icsneoGetFire2Settings(void* hObject, SFire2Settings *pSettings, int iNumBytes);
+int  ICSCC icsneoSetFire2Settings(void* hObject, SFire2Settings *pSettings, int iNumBytes, int bSaveToEEPROM);
 int  ICSCC icsneoGetDeviceParameters(void *hObject, char *pParameters, char *pValues, short ValuesLength);
 int  ICSCC icsneoSetDeviceParameters(void *hObject, char *pParmValue, int *pErrorIndex, int bSaveToEEPROM);
 int  ICSCC icsneoGetSerialNumber(void *hObject, unsigned int *piSerialNumber);
@@ -81,7 +83,7 @@ int  ICSCC icsneoScriptWriteISO15765_2_TxMessage(void *hObject, unsigned int iIn
 int  ICSCC icsneoScriptReadAppSignal(void *hObject, unsigned int iIndex,double * dValue);
 int  ICSCC icsneoScriptWriteAppSignal(void *hObject, unsigned int iIndex,double dValue);
 int  ICSCC icsneoScriptGetScriptStatus(void *hObject, int *piStatus);
-int  ICSCC icsneoOpenRemoteNeoDevice(const char *pIPAddress, NeoDevice *pNeoDevice,	int *hObject, unsigned char *bNetworkIDs, int iOptions);
+int  ICSCC icsneoOpenRemoteNeoDevice(char *pIPAddress, NeoDevice *pNeoDevice,	void **hObject, unsigned char *bNetworkIDs, int iOptions);
 int  ICSCC icsneoISO15765_TransmitMessage(void *hObject, unsigned long ulNetworkID, stCM_ISO157652_TxMessage *pMsg, unsigned long ulBlockingTimeout);
 void ICSCC icsneoGetISO15765Status(void *hObject, int lNetwork, int lClearTxStatus, int lClearRxStatus, int *lTxStatus, int *lRxStatus);
 void ICSCC icsneoSetISO15765RxParameters(void *hObject, int lNetwork, int lEnable, spyFilterLong *pFF_CFMsgFilter, icsSpyMessage *pTxMsg, int lCFTimeOutMs,
