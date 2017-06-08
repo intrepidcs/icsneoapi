@@ -97,6 +97,10 @@ int  ICSCC icsneoISO15765_EnableNetworks(void *hObject, unsigned long ulNetworks
 int  ICSCC icsneoISO15765_DisableNetworks(void *hObject);
 int  ICSCC icsneoStartSockServer(void *hObject, int iPort);
 int  ICSCC icsneoStopSockServer(void *hObject);
+int  ICSCC icsneoGetRADGalaxySettings(void* hObject, SRADGalaxySettings *pSettings, int iNumBytes);
+int  ICSCC icsneoSetRADGalaxySettings(void* hObject, SRADGalaxySettings *pSettings, int iNumBytes, int bSaveToEEPROM);
+int  ICSCC icsneoSerialNumberToString(unsigned long serial, char *data, unsigned long data_size);
+int  ICSCC icsneoSerialNumberFromString(unsigned long *serial, const char *data);
 
 #ifdef __cplusplus
 }

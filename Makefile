@@ -7,11 +7,11 @@ AR=ar
 
 all: shared lib
 
-shared: CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o
-	$(CXX) $(LDFLAGS) -o libicsneoapi.so CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o $(LIBS)
+shared: CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o NeoviSerialNumberFormatter.o
+	$(CXX) $(LDFLAGS) -o libicsneoapi.so CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o NeoviSerialNumberFormatter.o $(LIBS)
 
-lib: CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o
-	$(AR) rcs libicsneoapi.a CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o
+lib: CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o NeoviSerialNumberFormatter.o
+	$(AR) rcs libicsneoapi.a CFTDILib.o cicsneoVI.o icsneoLinuxAPI.o OCriticalSection.o OEvent.o OSAbstraction.o OThread.o NeoviSerialNumberFormatter.o
 
 CFTDILib.o: src/CFTDILib.cpp
 	$(CXX) $(CFLAGS) src/CFTDILib.cpp
@@ -33,6 +33,9 @@ OSAbstraction.o: src/OSAbstraction.cpp
 
 OThread.o: src/OThread.cpp
 	$(CXX) $(CFLAGS) src/OThread.cpp
+
+NeoviSerialNumberFormatter.o: src/NeoviSerialNumberFormatter.cpp
+	$(CXX) $(CFLAGS) src/NeoviSerialNumberFormatter.cpp
 
 clean:
 	rm -rf *.o libicsneo.a libicsneoapi.so

@@ -26,6 +26,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdlib.h>
 #include "CFTDILib.h"
+#include "NeoviSerialNumberFormatter.h"
 
 CFTDILibLinux::CFTDILibLinux() 
 {
@@ -76,9 +77,7 @@ int CFTDILibLinux::GetPID(unsigned long DevType)
 			break;
 			
 		case NEODEVICE_VCANRF:
-		
 			PID = 0x0601;
-
 			break;
 		
 		default:
@@ -140,7 +139,7 @@ int CFTDILibLinux::FindneoVIs(NeoDevice *pDevice, unsigned long DevTypes)
 			bMatch = false;
 			
 			ftdi_usb_get_strings(&ftdic, ListItemCur->dev, NULL, 0, NULL, 0, SerialNum, 49);	
-			iSerialNum = atoi(SerialNum);
+			iSerialNum = NeoviSerialNumberFormatter::ToInt(SerialNum);
 			
 			switch(DevType)
 			{
@@ -202,7 +201,7 @@ bool CFTDILibLinux::OpenNeoVI(NeoDevice *pDevice)
 {
 	int PID;
 	int iRetVal;
-	char SerialNumber[20];
+	char SerialNumber[64];
 	
 	if(m_bDeviceOpen)
 		return true;
@@ -217,25 +216,25 @@ bool CFTDILibLinux::OpenNeoVI(NeoDevice *pDevice)
 	if(PID == 0)
 		return false;
 		
+	std::string serialStr(NeoviSerialNumberFormatter::ToString(pDevice->SerialNumber));
+
 	switch(pDevice->DeviceType)
 	{
 		case NEODEVICE_ION_2:		
 		case NEODEVICE_ION_3:
-			sprintf(SerialNumber, "%dic", pDevice->SerialNumber);
+			sprintf(SerialNumber, "%sic", serialStr.c_str());
 		break;
 				
 		case NEODEVICE_PLASMA_1_12:
 		case NEODEVICE_PLASMA_1_13:
-			sprintf(SerialNumber, "%dpc", pDevice->SerialNumber);
+			sprintf(SerialNumber, "%spc", serialStr.c_str());
 		break;
 		
 		default:
-			sprintf(SerialNumber, "%d", pDevice->SerialNumber);
+			sprintf(SerialNumber, "%s", serialStr.c_str());
 		break;
 		
 	}
-
-    sprintf(SerialNumber, "%d", pDevice->SerialNumber);
 	
 	iRetVal = ftdi_usb_open_desc(&m_ftdic, 0x093C, PID, NULL, SerialNumber);
 	
