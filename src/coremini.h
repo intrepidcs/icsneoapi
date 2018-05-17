@@ -291,6 +291,35 @@ typedef struct  _CoreMiniMsgBitsCAN
 
 } CoreMiniMsgBitsCAN;
 
+typedef struct _CoreMiniMsgBitsCANFD
+{
+	// CxTRB0SID
+	unsigned IDE : 1;
+	unsigned SRR : 1;
+	unsigned SID : 11;
+	unsigned EDL : 1;
+	unsigned BRS : 1;
+	unsigned ESI : 1;
+
+	// CxTRB0EID
+	unsigned EID : 12;
+	unsigned TXMSG : 1;
+	unsigned TXAborted : 1;
+	unsigned TXLostArb : 1;
+	unsigned TXError : 1;
+
+	//CxTRB0DLC
+	unsigned DLC : 4;
+	unsigned RB0 : 1;// ExtendedNetworkIndexBit2 must be 0 for all CAN
+	unsigned IVRIF : 1;
+	unsigned HVEnable : 1;// must be cleared before passing into CAN driver
+	unsigned ExtendedNetworkIndexBit : 1;//DO NOT CLOBBER THIS
+	unsigned RB1 : 1;
+	unsigned RTR : 1;
+	unsigned EID2 : 6;
+
+} CoreMiniMsgBitsCANFD;
+
 typedef VS_MODIFIER struct  _CoreMiniMsg 
 {
 	union 
@@ -468,7 +497,12 @@ typedef VS_MODIFIER struct  _CoreMiniMsg
 	};
 } CoreMiniMsg;
 
-
+typedef VS_MODIFIER struct _CoreMiniMsgExtendedHdr
+{
+	CoreMiniMsg stMsg;
+	icscm_uint16 NetworkID;
+	icscm_uint16 Length;
+} CoreMiniMsgExtendedHdr;
 
 #ifdef __C30
 

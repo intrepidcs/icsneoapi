@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2016 Intrepid Control Systems, Inc.
+Copyright (c) 2018 Intrepid Control Systems, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -38,22 +38,21 @@ private:
 	
 public:
 
+	static int GetPID(unsigned long DevType);
+
+	public:
 	CFTDILibLinux();
 	~CFTDILibLinux();
-	
-	
-	bool OpenNeoVI(NeoDevice *pDevice);
-	bool CloseDevice(void);	
-	bool SetLatencyTimer(unsigned char latency);
-	bool PurgeBuffers(void);
-	
-	int Write(unsigned char *buf, int size);
-	int Read(unsigned char *buf, int size);
-	
-	void Reset(void);
 
 	//always pass in 255 NeoDevice structures
-	static int FindneoVIs(NeoDevice *pDevice, unsigned long DevType);
-	static int GetPID(unsigned long DevType);
-	
+	static int FindneoVIs(NeoDevice* pDevice, unsigned long DevType);
+	bool OpenNeoVI(uint32_t iDeviceType, int32_t iSerialNumber);
+	bool CloseDevice(void);
+
+	int Write(unsigned char* buf, int size);
+	int Read(unsigned char* buf, int size);
+
+	bool SetLatencyTimer(unsigned char latency);
+	bool PurgeBuffers(void);
+	void Reset(void);
 };

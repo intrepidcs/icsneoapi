@@ -31,3 +31,9 @@ $ sudo mkdir /usr/include/ics
 $ sudo cp src/icsnVC40.h /usr/include/ics/
 $ sudo cp src/icsneo40API.h /usr/include/ics/
 ```
+
+If you'd like to be able to run programs that use this library without being root, consider using the included udev rules
+
+```
+$ sudo cp 99-intrepidcs.rules /etc/udev/rules.d/
+```

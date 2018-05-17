@@ -33,6 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 #include <string.h>
 #include "CFTDILib.h"
+#include "NeoviSerialNumberFormatter.h"
 
 class GetNeoVIObject;
 OCriticalSection neovi_objects_lock;
@@ -233,4 +234,25 @@ extern "C" int __attribute__((visibility("default"))) icsneoWaitForRxMessagesWit
     }
 
     return pOb->WaitForRxMessagesWithTimeOut(iTimeOut);
+}
+
+extern "C" int __attribute__((visibility("default")))  icsneoSerialNumberToString(unsigned int serial, char* data, int data_size)
+{
+    if (!data || data_size == 0)
+        return 0;
+    std::string ret = CNeoviSerialNumberFormatter::ConvertToStr(serial);
+    size_t len = ret.size();
+    if (data_size >= len)
+        len = data_size - 1;
+    memcpy(data, ret.c_str(), len);
+    data[len] = '\0';
+    return 1;
+}
+
+extern "C" int __attribute__((visibility("default")))  icsneoSerialNumberFromString(unsigned int* serial, const char* data)
+{
+    if (!serial)
+        return 0;
+    *serial = CNeoviSerialNumberFormatter::ConvertToInt(data);
+    return 1;
 }

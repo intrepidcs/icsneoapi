@@ -26,6 +26,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "cicsneoVI.h"
 #include "OSAbstraction.h"
 #include "CFTDILib.h"
+#include "NeoviSerialNumberFormatter.h"
 #include <sys/time.h>
 #include <time.h>
 
@@ -111,6 +112,11 @@ bool cicsneoVI::AddMsgToRXQueue(icsSpyMessage &stMsg, bool bSetEvent)
 		m_pcsReceivedData->Unlock();
 		return false;
     }
+        if (m_pMsgBuffer[m_InComingMsgCount].ExtraDataPtr && m_pMsgBuffer[m_InComingMsgCount].ExtraDataPtrEnabled)
+        {
+            unsigned char* edp = (unsigned char*)m_pMsgBuffer[m_InComingMsgCount].ExtraDataPtr;
+            delete [] edp;
+        }
 		 
         m_pMsgBuffer[m_InComingMsgCount] = stMsg;
 
@@ -291,7 +297,7 @@ bool cicsneoVI::OpenDevice(NeoDevice *pDevice)
 {
 	int PID;
 	int iRetVal;
-	char SerialNumber[20];
+	char SerialNumber[100];
 	
 	if(m_bDeviceOpen)
 		return true;		
@@ -304,11 +310,11 @@ bool cicsneoVI::OpenDevice(NeoDevice *pDevice)
 	if(PID == 0)
 		return false;
 
-    sprintf(SerialNumber, "%d", pDevice->SerialNumber);
+    sprintf(SerialNumber, "%s", CNeoviSerialNumberFormatter::ConvertToStr(pDevice->SerialNumber).c_str());
 	
 	iRetVal = ftdi_usb_open_desc(m_ftdic, 0x093C, PID, NULL, SerialNumber);
 	if(iRetVal < 0)
-		return iRetVal;
+		return false;
 	
 	m_bDeviceOpen = true;
 
@@ -680,32 +686,168 @@ bool cicsneoVI::Process3rdGenerationCANRx(    unsigned long lCurrentTime,
   
     CoreMiniMsg stMsg = GenCoreMiniMsg((const unsigned short*)&bPacket[5]);      
     
-	const CoreMiniMsgBitsCAN * stMsgBits = (const CoreMiniMsgBitsCAN*)&stMsg;
+	const CoreMiniMsgBitsCAN* stMsgBits = (const CoreMiniMsgBitsCAN*)&stMsg;
+    const CoreMiniMsgExtendedHdr * pCmExt = (const CoreMiniMsgExtendedHdr*)&stMsg;
+    const CoreMiniMsgBitsCANFD* fdbits = (const CoreMiniMsgBitsCANFD*)&stMsg;
 
 	icsSpyMessage mMsg = {0};
 
-    // type of CAN ID
-    if(stMsgBits->IDE) // (stMsg.CxTRB0SID.IDE)
+    if ((pCmExt->stMsg.uiTimeStamp10uSMSB & 0x80000000) && (fdbits->EDL == 1 || fdbits->DLC == 0xf))
     {
+        int byteCount = pCmExt->Length + sizeof(CoreMiniMsgExtendedHdr);
+        const unsigned char* stMsg = &bPacket[5];
+        const unsigned char* pBytes = (const unsigned char*)stMsg;
+
+        unsigned char numBytes;
+		switch (fdbits->DLC)
+		{
+			case 0:
+			case 1:
+			case 2:
+			case 3:
+			case 4:
+			case 5:
+			case 6:
+			case 7:
+			case 8:
+				numBytes = fdbits->DLC;
+				break;
+			case 9:
+				numBytes = 12;
+				break;
+			case 10:
+				numBytes = 16;
+				break;
+			case 11:
+				numBytes = 20;
+				break;
+			case 12:
+				numBytes = 24;
+				break;
+			case 13:
+				numBytes = 32;
+				break;
+			case 14:
+				numBytes = 48;
+				break;
+			case 15:
+				numBytes = 64;
+				break;
+			default:
+				mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;
+				break;
+		}
+		icscm_uint32 uiTimeStamp10uS = pCmExt->stMsg.uiTimeStamp10uS;
+		icscm_uint32 uiTimeStamp10uSMSB = pCmExt->stMsg.uiTimeStamp10uSMSB & ~(0x80000000);
+		short DescriptionID = pCmExt->stMsg.CxTRB0STAT;
+		if (fdbits->TXMSG)
+		{
+			if (fdbits->TXError)
+			{
+				mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;
+				mMsg.StatusBitField |= SPY_STATUS_UNDEFINED_ERROR;
+			}
+			if (fdbits->TXLostArb)
+			{
+				mMsg.StatusBitField |= SPY_STATUS_LOST_ARBITRATION;
+			}
+			if (fdbits->TXAborted)
+			{
+				mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;
+				mMsg.StatusBitField |= SPY_STATUS_VSI_TX_UNDERRUN;
+			}
+			mMsg.StatusBitField |= SPY_STATUS_TX_MSG;
+			mMsg.DescriptionID = DescriptionID;
+		}
+		mMsg.TimeHardware = uiTimeStamp10uS;
+		mMsg.TimeHardware2 = uiTimeStamp10uSMSB;
+		mMsg.Protocol = (SPY_PROTOCOL_CANFD);
+		mMsg.StatusBitField |= SPY_STATUS_CANFD;
+		mMsg.TimeStampHardwareID = 9;
+
+		mMsg.NumberBytesData = numBytes;
+		unsigned char copySize = numBytes;
+		if (copySize > 8)
+			copySize = 8;
+        unsigned char bytes[512];
+		memcpy(bytes, &pCmExt->stMsg.CxTRB0D0, copySize);
+		numBytes -= copySize;
+		icscm_uint32 byte_iter = copySize;
+		memcpy(&bytes[byte_iter], &pBytes[sizeof(CoreMiniMsgExtendedHdr)], numBytes);
+
+		mMsg.StatusBitField3 = fdbits->ESI ? SPY_STATUS3_CANFD_ESI : 0;
+		mMsg.StatusBitField3 |= fdbits->IDE ? SPY_STATUS3_CANFD_IDE : 0;
+		mMsg.StatusBitField3 |= fdbits->RTR ? SPY_STATUS3_CANFD_RTR : 0;
+		mMsg.StatusBitField3 |= fdbits->EDL ? SPY_STATUS3_CANFD_FDF : 0;
+		mMsg.StatusBitField3 |= fdbits->BRS ? SPY_STATUS3_CANFD_BRS : 0;
+
+		if (fdbits->IDE)
+		{
+			/* first 4 bytes except for 3 msb of 4th byte are ID */
+			mMsg.StatusBitField |= SPY_STATUS_NETWORK_MESSAGE_TYPE + SPY_STATUS_XTD_FRAME;
+			mMsg.ArbIDOrHeader = (fdbits->SID & 0x7ff) << 18;
+			mMsg.ArbIDOrHeader |= (fdbits->EID & 0xfff) << 6;
+			mMsg.ArbIDOrHeader |= (fdbits->EID2 & 0x3f);
+		}
+		else
+		{
+			/* bits [28:18] are ID */
+			mMsg.StatusBitField |= SPY_STATUS_NETWORK_MESSAGE_TYPE;
+			mMsg.ArbIDOrHeader = fdbits->SID;
+		}
+		mMsg.NumberBytesHeader = 4;
+		if (fdbits->RTR)
+		{
+			mMsg.StatusBitField = SPY_STATUS_REMOTE_FRAME;
+			mMsg.Data[0] = 0;
+			mMsg.Data[1] = 0;
+			mMsg.Data[2] = 0;
+			mMsg.Data[3] = 0;
+			mMsg.Data[4] = 0;
+			mMsg.Data[5] = 0;
+			mMsg.Data[6] = 0;
+			mMsg.Data[7] = 0;
+		}
+
+		//need to copy the first 8 bytes over to the data field otherwise perform filtering will not work.
+		memcpy((void*)mMsg.Data, bytes, mMsg.NumberBytesData > 8 ? 8 : mMsg.NumberBytesData);
+
+		if (mMsg.NumberBytesData > 8)
+		{
+			/* use heap memory for flat array, not really good since the dealloc strategy is unclear */
+			unsigned char* byteCursor = bytes;
+			unsigned char bytesToCopy = mMsg.NumberBytesData;
+			unsigned char* p_btLongData;
+			p_btLongData = new unsigned char[bytesToCopy];
+			memcpy(p_btLongData, byteCursor, bytesToCopy);
+			mMsg.ExtraDataPtrEnabled = 1;
+			mMsg.ExtraDataPtr = p_btLongData;
+		}
+    }
+    else
+    {
+        // type of CAN ID
+        if(stMsgBits->IDE) // (stMsg.CxTRB0SID.IDE)
+        {
             mMsg.StatusBitField = SPY_STATUS_NETWORK_MESSAGE_TYPE + SPY_STATUS_XTD_FRAME;
                 // 29 bit ID
             mMsg.ArbIDOrHeader = ((unsigned int) stMsgBits->SID)<<18; // ((unsigned int) stMsg.CxTRB0SID.SID)<<18;
             mMsg.ArbIDOrHeader += stMsgBits->EID << 6;
             mMsg.ArbIDOrHeader += stMsgBits->EID2;
-    }
-    else
-    {
+        }
+        else
+        {
 
             mMsg.StatusBitField = SPY_STATUS_NETWORK_MESSAGE_TYPE;
             mMsg.ArbIDOrHeader = stMsgBits->SID; //stMsg.CxTRB0SID.SID;
-    }
+        }
 
-    mMsg.NumberBytesHeader= 4;
-    mMsg.NumberBytesData = stMsgBits->DLC; // stMsg.CxTRB0DLC.DLC;
+        mMsg.NumberBytesHeader= 4;
+        mMsg.NumberBytesData = stMsgBits->DLC; // stMsg.CxTRB0DLC.DLC;
 
-    if(	(stMsgBits->IDE==1 && stMsgBits->RTR==1) ||  
-        (stMsgBits->IDE==0 && stMsgBits->SRR==1)	)
-    {
+        if(	(stMsgBits->IDE==1 && stMsgBits->RTR==1) ||  
+            (stMsgBits->IDE==0 && stMsgBits->SRR==1)	)
+        {
             mMsg.StatusBitField = SPY_STATUS_REMOTE_FRAME;
             mMsg.Data[0]= 0;
             mMsg.Data[1]= 0;
@@ -715,9 +857,9 @@ bool cicsneoVI::Process3rdGenerationCANRx(    unsigned long lCurrentTime,
             mMsg.Data[5]= 0;
             mMsg.Data[6]= 0;
             mMsg.Data[7]= 0;
-    }
-    else                                                      
-    {
+        }
+        else                                                      
+        {
             mMsg.Data[0]= stMsg.CxTRB0D0;
             mMsg.Data[1]= stMsg.CxTRB0D1;
             mMsg.Data[2]= stMsg.CxTRB0D2;
@@ -726,70 +868,74 @@ bool cicsneoVI::Process3rdGenerationCANRx(    unsigned long lCurrentTime,
             mMsg.Data[5]= stMsg.CxTRB0D5;
             mMsg.Data[6]= stMsg.CxTRB0D6;
             mMsg.Data[7]= stMsg.CxTRB0D7;
-    }
-
-    mMsg.TimeHardware =   stMsg.uiTimeStamp10uS;
-    mMsg.TimeHardware2 = stMsg.uiTimeStamp10uSMSB;
-
-    mMsg.NetworkID = (NETID_HSCAN);
-    mMsg.Protocol = (SPY_PROTOCOL_CAN);
-    
-        //  is this a transmit complete report?
-    if(stMsgBits->TXMSG) //  (stMsg.CxTRB0EID.TXMSG)
-    {
-                // status bitfield
-                mMsg.StatusBitField += SPY_STATUS_TX_MSG;
-                // transmit id
-                mMsg.DescriptionID =  stMsg.CxTRB0STAT;
-                // tx error bits
-                if(stMsgBits->TXError) // (stMsg.CxTRB0EID.TXError) // tx error
-                {
-                        mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;
-                        mMsg.StatusBitField |= SPY_STATUS_UNDEFINED_ERROR;
-                }
-                if(stMsgBits->TXLostArb) // (if (stMsg.CxTRB0EID.TXLostArb) // tx lost arb
-                {
-                        mMsg.StatusBitField |= SPY_STATUS_LOST_ARBITRATION;
-                }
-                if(stMsgBits->TXAborted) // (if (stMsg.CxTRB0EID.TXAborted) // tx aborted
-                {
-                        mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;
-                        mMsg.StatusBitField |= SPY_STATUS_VSI_TX_UNDERRUN;
-                }
-    }
-
-    if(stMsgBits->RB1)
-    {
-                //frame is an error frame, data bytes are already copied
-
-                mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;  
-                mMsg.StatusBitField2 = SPY_STATUS2_ERROR_FRAME;
-
-                mMsg.ArbIDOrHeader =0;
-                mMsg.NumberBytesHeader = 0;
-
-                if(mMsg.Data[3] & 1)
-                {
-                        if(mMsg.Data[3] & 2)
-                                mMsg.StatusBitField |= SPY_STATUS_BUS_SHORTED_PLUS;
-                        else
-                                mMsg.StatusBitField |= SPY_STATUS_BUS_RECOVERED;
-                }
-                else    
-                        mMsg.StatusBitField |= SPY_STATUS_CAN_BUS_OFF; 
-
-                mMsg.NumberBytesData = 3;
-
-                mMsg.DescriptionID = 0;
         }
 
-        mMsg.NetworkID = RetrieveAppNetID(bPacket[3]);    
-        mMsg.Protocol = SPY_PROTOCOL_CAN;
+        mMsg.TimeStampHardwareID = 9;
+        mMsg.TimeHardware =   stMsg.uiTimeStamp10uS;
+        mMsg.TimeHardware2 = stMsg.uiTimeStamp10uSMSB & ~(0x80000000);
+
+        mMsg.NetworkID = (NETID_HSCAN);
+        mMsg.Protocol = (SPY_PROTOCOL_CAN);
         
-        if(mMsg.ArbIDOrHeader > 0)
-            AddMsgToRXQueue(mMsg, true);
-                
-        return true;
+            //  is this a transmit complete report?
+        if(stMsgBits->TXMSG) //  (stMsg.CxTRB0EID.TXMSG)
+        {
+            // status bitfield
+            mMsg.StatusBitField += SPY_STATUS_TX_MSG;
+            // transmit id
+            mMsg.DescriptionID =  stMsg.CxTRB0STAT;
+            // tx error bits
+            if(stMsgBits->TXError) // (stMsg.CxTRB0EID.TXError) // tx error
+            {
+                mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;
+                mMsg.StatusBitField |= SPY_STATUS_UNDEFINED_ERROR;
+            }
+            if(stMsgBits->TXLostArb) // (if (stMsg.CxTRB0EID.TXLostArb) // tx lost arb
+            {
+                mMsg.StatusBitField |= SPY_STATUS_LOST_ARBITRATION;
+            }
+            if(stMsgBits->TXAborted) // (if (stMsg.CxTRB0EID.TXAborted) // tx aborted
+            {
+                mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;
+                mMsg.StatusBitField |= SPY_STATUS_VSI_TX_UNDERRUN;
+            }
+        }
+
+        if(stMsgBits->RB1)
+        {
+            //frame is an error frame, data bytes are already copied
+
+            mMsg.StatusBitField |= SPY_STATUS_GLOBAL_ERR;  
+            mMsg.StatusBitField2 = SPY_STATUS2_ERROR_FRAME;
+
+            mMsg.ArbIDOrHeader =0;
+            mMsg.NumberBytesHeader = 0;
+
+            if(mMsg.Data[3] & 1)
+            {
+                if(mMsg.Data[3] & 2)
+                    mMsg.StatusBitField |= SPY_STATUS_BUS_SHORTED_PLUS;
+                else
+                    mMsg.StatusBitField |= SPY_STATUS_BUS_RECOVERED;
+            }
+            else    
+                mMsg.StatusBitField |= SPY_STATUS_CAN_BUS_OFF; 
+
+            mMsg.NumberBytesData = 3;
+
+            mMsg.DescriptionID = 0;
+        }
+    
+        mMsg.Protocol = SPY_PROTOCOL_CAN;
+    }
+        
+    if(mMsg.ArbIDOrHeader > 0)
+    {
+        mMsg.NetworkID = RetrieveAppNetID(bPacket[3]);
+        AddMsgToRXQueue(mMsg, true);
+    }
+            
+    return true;
 }
 
 bool cicsneoVI::CloseDevice(void)
@@ -806,7 +952,7 @@ bool cicsneoVI::CloseDevice(void)
         0x00, 0xCE, 0xAA, 0x30, 0x02, 0x06, 0x04, 0xC4
     };
     ftdi_write_data(m_ftdic, go_offline, sizeof(go_offline));
-    		
+
 	ftdi_usb_close(m_ftdic);
     ftdi_usb_reset(m_ftdic);
    
