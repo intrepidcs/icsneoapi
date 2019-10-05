@@ -2,8 +2,20 @@ CXX=g++
 CC=gcc
 CFLAGS=-g -c -fpic -fvisibility=hidden -fvisibility-inlines-hidden -O2 -Isrc/
 LDFLAGS=-O2 -s -Wl,--unresolved-symbols=report-all -Wl,--no-allow-shlib-undefined -shared -fvisibility=hidden -fvisibility-inlines-hidden
-LIBS=-lpthread -lftdi
+LIBS=-lpthread
 AR=ar
+
+# Some distros name it 'libftdi', others 'libftdi1' We have to try them both
+# This dance is so that we evaluate pkg-config once, instead of each
+# invocation of $(CC)
+FTDI_CFLAGS := $(shell pkg-config --cflags libftdi 2>/dev/null)
+FTDI_LIBS   := $(shell pkg-config --libs-only-l libftdi 2>/dev/null)
+ifeq ($(FTDI_LIBS),)
+	FTDI_CFLAGS := $(shell pkg-config --cflags libftdi1)
+	FTDI_LIBS   := $(shell pkg-config --libs-only-l libftdi1)
+endif
+CFLAGS += $(FTDI_CFLAGS)
+LIBS   += $(FTDI_LIBS)
 
 all: shared lib
 
