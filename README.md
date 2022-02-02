@@ -1,6 +1,11 @@
 icsneoapi
 =========
 
+> :warning: **DEPRECATION NOTICE** :warning: This library has been fully succeeded by [libicsneo](https://github.com/intrepidcs/libicsneo) and is no longer maintained or updated.
+> 
+> For an ABI compatible library to this one, check the icsneolegacy API in the libicsneo project.
+
+
 A BSD-licensed open source library for communicating with vehicle network tools developed by Intrepid Control Systems. This library supports only a subset of devices and functionality.
 
 Requires libftdi1.
